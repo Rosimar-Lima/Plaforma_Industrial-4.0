@@ -15,6 +15,7 @@ princípios da Indústria 4.0.
 | Diretório | Descrição |
 | --- | --- |
 | `simulator/` | Simulador de PLC que publica telemetria de sensores. |
+| `gateway/` | Gateway industrial (ADS, OPC-UA, Modbus TCP) para PLCs reais. |
 | `backend/` | API de ingestão, regras de negócio e consultas. |
 | `dashboard/` | Interface web para monitoramento e indicadores. |
 | `database/` | Schema e configuração do PostgreSQL. |
@@ -29,6 +30,9 @@ princípios da Indústria 4.0.
 | [ROADMAP.md](ROADMAP.md) | Fases e entregas planejadas. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Visão arquitetural. |
 | [DECISIONS.md](DECISIONS.md) | Registro de decisões de arquitetura (ADR). |
+| [docs/source-project.md](docs/source-project.md) | Projeto de origem e mapa de migração. |
+| [docs/openapi.yaml](docs/openapi.yaml) | Contrato da API (OpenAPI 3). |
+| [gateway/README.md](gateway/README.md) | Gateway industrial (ADS, OPC-UA, Modbus TCP). |
 | [docs/](docs/) | Requisitos, indicadores, casos de uso e glossário. |
 
 ## Começando
@@ -36,6 +40,24 @@ princípios da Indústria 4.0.
 ```bash
 cp .env.example .env
 docker compose up -d
+```
+
+Dashboard: `http://localhost:3000` (servido pelo backend). A telemetria chega em
+tempo real por SSE (`/api/stream`), com fallback para polling. Para rodar sem
+Docker, use `cd backend/node-api && npm install && npm start` e o simulador com
+`node simulator/plc-simulator.js`.
+
+Alertas são gerados na ingestão quando o nível de envase sai dos limites
+configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além de
+`ALERT_STOPPED_MS`. O dashboard exibe os alertas abertos em tempo real e permite
+resolvê-los; o histórico fica em `GET /api/machines/:id/alerts?status=all`.
+
+Para usar um PLC real, o `gateway/` lê ADS, OPC-UA ou Modbus TCP e publica na
+mesma API. O adaptador `simulator` permite testar o gateway sem hardware:
+
+```bash
+cd gateway && npm install
+INDUSTRIAL_PROTOCOL=simulator npm start
 ```
 
 ## Licença

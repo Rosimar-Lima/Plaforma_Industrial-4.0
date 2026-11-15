@@ -1,0 +1,20 @@
+{
+  "name": "industrial-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gateway industrial multi-protocolo (ADS, OPC-UA, Modbus TCP) da Plataforma Industrial 4.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/gateway.js && node --check src/mapping.js && node --check src/http-publisher.js && node --check src/adapters/index.js && node --check src/adapters/ads.js && node --check src/adapters/opcua.js && node --check src/adapters/modbus.js && node --check src/adapters/simulator.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  },
+  "optionalDependencies": {
+    "ads-client": "^2.2.0",
+    "modbus-serial": "^8.0.17",
+    "node-opcua": "^2.150.0"
+  }
+}

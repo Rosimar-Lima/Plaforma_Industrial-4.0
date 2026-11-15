@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plataforma Industrial 4.0</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <div>
+          <h1>Plataforma Industrial 4.0</h1>
+          <p>Monitoramento da linha de envase</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Máquina</span>
+          <select id="machine-select"></select>
+        </label>
+        <label class="field">
+          <span>Período</span>
+          <select id="period-select">
+            <option value="15">15 min</option>
+            <option value="60" selected>1 hora</option>
+            <option value="360">6 horas</option>
+            <option value="1440">24 horas</option>
+          </select>
+        </label>
+        <button id="refresh" type="button">Atualizar</button>
+        <span id="connection" class="badge offline">Offline</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel status-panel">
+        <div class="panel-head">
+          <h2>Estado da linha</h2>
+          <span id="last-update" class="muted">sem dados</span>
+        </div>
+        <div class="status-grid">
+          <article class="stat">
+            <span class="stat-label">Operação</span>
+            <strong id="stat-running" class="stat-value">—</strong>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Etapa</span>
+            <strong id="stat-step" class="stat-value">—</strong>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Esteira</span>
+            <strong id="stat-conveyor" class="stat-value">—</strong>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Envase (EV)</span>
+            <strong id="stat-ev" class="stat-value">—</strong>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Tampagem (AT)</span>
+            <strong id="stat-at" class="stat-value">—</strong>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Nível de envase</span>
+            <strong id="stat-fill" class="stat-value">—</strong>
+          </article>
+        </div>
+        <div class="production-grid">
+          <article class="prod">
+            <span class="stat-label">Envasadas</span>
+            <strong id="prod-filled">0</strong>
+          </article>
+          <article class="prod">
+            <span class="stat-label">Tampadas</span>
+            <strong id="prod-capped">0</strong>
+          </article>
+          <article class="prod accent">
+            <span class="stat-label">Produção total</span>
+            <strong id="prod-total">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel chart-panel">
+        <div class="panel-head">
+          <h2>Nível de envase</h2>
+          <span class="muted">últimas amostras</span>
+        </div>
+        <canvas id="chart" height="180"></canvas>
+        <p id="chart-empty" class="empty">Sem amostras para exibir.</p>
+      </section>
+
+      <section class="panel oee-panel">
+        <div class="panel-head">
+          <h2>OEE</h2>
+          <span id="oee-period" class="muted">—</span>
+        </div>
+        <div class="oee-grid">
+          <article class="oee-card primary">
+            <span class="stat-label">OEE</span>
+            <strong id="oee-value" class="oee-value">—</strong>
+            <div class="bar"><span id="oee-bar"></span></div>
+          </article>
+          <article class="oee-card">
+            <span class="stat-label">Disponibilidade</span>
+            <strong id="oee-availability" class="oee-value">—</strong>
+            <div class="bar"><span id="oee-availability-bar"></span></div>
+          </article>
+          <article class="oee-card">
+            <span class="stat-label">Performance</span>
+            <strong id="oee-performance" class="oee-value">—</strong>
+            <div class="bar"><span id="oee-performance-bar"></span></div>
+          </article>
+          <article class="oee-card">
+            <span class="stat-label">Qualidade</span>
+            <strong id="oee-quality" class="oee-value">—</strong>
+            <div class="bar"><span id="oee-quality-bar"></span></div>
+          </article>
+        </div>
+        <dl class="oee-meta">
+          <div><dt>Produzidas</dt><dd id="oee-produced">0</dd></div>
+          <div><dt>Boas</dt><dd id="oee-good">0</dd></div>
+          <div><dt>Tempo operando</dt><dd id="oee-operating">—</dd></div>
+          <div><dt>Capacidade nominal</dt><dd id="oee-capacity">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel alerts-panel">
+        <div class="panel-head">
+          <h2>Alertas</h2>
+          <span id="alerts-count" class="muted">nenhum ativo</span>
+        </div>
+        <ul id="alerts-list" class="alert-list"></ul>
+        <p id="alerts-empty" class="empty">Nenhum alerta ativo.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Atualização automática a cada 3 s · indicadores a cada 15 s · alertas em tempo real
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

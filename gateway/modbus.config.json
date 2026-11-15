@@ -1,0 +1,18 @@
+{
+  "unitId": 1,
+  "symbols": {
+    "running": { "type": "coil", "address": 0 },
+    "sensorS1": { "type": "coil", "address": 1 },
+    "sensorS2": { "type": "coil", "address": 2 },
+    "bottlePositioned": { "type": "coil", "address": 3 },
+    "conveyorOn": { "type": "coil", "address": 4 },
+    "evOn": { "type": "coil", "address": 5 },
+    "atOn": { "type": "coil", "address": 6 },
+    "evInterlock": { "type": "coil", "address": 7 },
+    "atInterlock": { "type": "coil", "address": 8 },
+    "fillPercent": { "type": "holding", "address": 10 },
+    "filled": { "type": "holding", "address": 12, "words": 2 },
+    "capped": { "type": "holding", "address": 14, "words": 2 },
+    "total": { "type": "holding", "address": 16, "words": 2 }
+  }
+}

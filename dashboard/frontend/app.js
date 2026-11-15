@@ -1,0 +1,509 @@
+'use strict';
+
+const POLL_TELEMETRY_MS = 3000;
+const POLL_OEE_MS = 15000;
+const POLL_ALERTS_MS = 15000;
+const TELEMETRY_LIMIT = 120;
+
+const SEVERITY_LABELS = {
+  critical: 'Crítico',
+  warning: 'Atenção',
+  info: 'Info',
+};
+
+const STEP_LABELS = {
+  0: '0 · transporte',
+  1: '1 · sensor S1',
+  2: '2 · envase',
+  3: '3 · saída',
+};
+
+const state = {
+  machines: [],
+  machineId: null,
+  machineCode: null,
+  periodMinutes: 60,
+  samples: [],
+  lastSamples: [],
+  alerts: [],
+  stream: null,
+  streamOnline: false,
+  pollOk: false,
+};
+
+const el = {
+  machineSelect: document.getElementById('machine-select'),
+  periodSelect: document.getElementById('period-select'),
+  refresh: document.getElementById('refresh'),
+  connection: document.getElementById('connection'),
+  lastUpdate: document.getElementById('last-update'),
+  running: document.getElementById('stat-running'),
+  step: document.getElementById('stat-step'),
+  conveyor: document.getElementById('stat-conveyor'),
+  ev: document.getElementById('stat-ev'),
+  at: document.getElementById('stat-at'),
+  fill: document.getElementById('stat-fill'),
+  filled: document.getElementById('prod-filled'),
+  capped: document.getElementById('prod-capped'),
+  total: document.getElementById('prod-total'),
+  chart: document.getElementById('chart'),
+  chartEmpty: document.getElementById('chart-empty'),
+  oeePeriod: document.getElementById('oee-period'),
+  oee: document.getElementById('oee-value'),
+  oeeBar: document.getElementById('oee-bar'),
+  availability: document.getElementById('oee-availability'),
+  availabilityBar: document.getElementById('oee-availability-bar'),
+  performance: document.getElementById('oee-performance'),
+  performanceBar: document.getElementById('oee-performance-bar'),
+  quality: document.getElementById('oee-quality'),
+  qualityBar: document.getElementById('oee-quality-bar'),
+  produced: document.getElementById('oee-produced'),
+  good: document.getElementById('oee-good'),
+  operating: document.getElementById('oee-operating'),
+  capacity: document.getElementById('oee-capacity'),
+  alertsList: document.getElementById('alerts-list'),
+  alertsCount: document.getElementById('alerts-count'),
+  alertsEmpty: document.getElementById('alerts-empty'),
+};
+
+async function getJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} em ${url}`);
+  }
+  return response.json();
+}
+
+function updateConnection() {
+  let label = 'Offline';
+  let mode = 'offline';
+
+  if (state.streamOnline) {
+    label = 'Tempo real';
+    mode = 'online';
+  } else if (state.pollOk) {
+    label = 'Polling';
+    mode = 'polling';
+  }
+
+  el.connection.textContent = label;
+  el.connection.classList.remove('online', 'polling', 'offline');
+  el.connection.classList.add(mode);
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat('pt-BR').format(Number(value) || 0);
+}
+
+function formatPercent(ratio) {
+  const value = Number(ratio);
+  if (!Number.isFinite(value)) return '—';
+  return `${(Math.max(0, Math.min(1, value)) * 100).toFixed(1)}%`;
+}
+
+function formatDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value <= 0) return '0 min';
+  const totalMinutes = Math.round(value / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
+function setRatio(valueEl, barEl, ratio) {
+  const safe = Number.isFinite(Number(ratio)) ? Math.max(0, Math.min(1, Number(ratio))) : 0;
+  valueEl.textContent = formatPercent(safe);
+  barEl.style.width = `${(safe * 100).toFixed(1)}%`;
+}
+
+function setBoolean(elmt, active, activeLabel, inactiveLabel) {
+  elmt.textContent = active ? activeLabel : inactiveLabel;
+  elmt.style.color = active ? 'var(--ok)' : 'var(--muted)';
+}
+
+function renderPlaceholders() {
+  el.running.textContent = '—';
+  el.step.textContent = '—';
+  el.conveyor.textContent = '—';
+  el.ev.textContent = '—';
+  el.at.textContent = '—';
+  el.fill.textContent = '—';
+  el.filled.textContent = '0';
+  el.capped.textContent = '0';
+  el.total.textContent = '0';
+  el.lastUpdate.textContent = 'sem dados';
+}
+
+function renderTelemetry(samples) {
+  const latest = samples[0];
+  if (!latest) {
+    renderPlaceholders();
+    drawChart([]);
+    return;
+  }
+
+  const line = latest.payload?.line ?? {};
+  const production = latest.payload?.production ?? {};
+
+  setBoolean(el.running, line.running, 'Em operação', 'Parada');
+  el.step.textContent = STEP_LABELS[line.step] ?? `etapa ${line.step ?? '—'}`;
+  setBoolean(el.conveyor, line.conveyorOn, 'Ligada', 'Parada');
+  setBoolean(el.ev, line.evOn, 'Enchendo', 'Inativa');
+  setBoolean(el.at, line.atOn, 'Tampando', 'Inativa');
+  el.fill.textContent = `${formatNumber(line.fillPercent)}%`;
+
+  el.filled.textContent = formatNumber(production.filled);
+  el.capped.textContent = formatNumber(production.capped);
+  el.total.textContent = formatNumber(production.total);
+
+  const recordedAt = new Date(latest.recorded_at);
+  el.lastUpdate.textContent = Number.isNaN(recordedAt.getTime())
+    ? 'agora'
+    : `atualizado às ${recordedAt.toLocaleTimeString('pt-BR')}`;
+
+  const ascending = [...samples].reverse();
+  state.lastSamples = ascending;
+  drawChart(ascending);
+}
+
+function drawChart(samples) {
+  const canvas = el.chart;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth || 600;
+  const height = 180;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const pad = { left: 44, right: 16, top: 16, bottom: 22 };
+  const plotWidth = width - pad.left - pad.right;
+  const plotHeight = height - pad.top - pad.bottom;
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif';
+  ctx.lineWidth = 1;
+
+  for (const level of [0, 25, 50, 75, 100]) {
+    const y = pad.top + (1 - level / 100) * plotHeight;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillText(`${level}%`, 8, y + 4);
+  }
+
+  const values = samples.map((sample) => {
+    const value = Number(sample.payload?.line?.fillPercent);
+    return Number.isFinite(value) ? value : 0;
+  });
+
+  el.chartEmpty.style.display = values.length > 0 ? 'none' : 'block';
+  if (values.length === 0) return;
+
+  const x = (index) =>
+    pad.left + (values.length === 1 ? plotWidth / 2 : (index / (values.length - 1)) * plotWidth);
+  const y = (value) =>
+    pad.top + (1 - Math.max(0, Math.min(100, value)) / 100) * plotHeight;
+
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const px = x(index);
+    const py = y(value);
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.lineTo(x(values.length - 1), pad.top + plotHeight);
+  ctx.lineTo(x(0), pad.top + plotHeight);
+  ctx.closePath();
+  const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotHeight);
+  gradient.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
+  gradient.addColorStop(1, 'rgba(56, 189, 248, 0.02)');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const px = x(index);
+    const py = y(value);
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function renderOee(data) {
+  setRatio(el.oee, el.oeeBar, data.oee);
+  setRatio(el.availability, el.availabilityBar, data.availability);
+  setRatio(el.performance, el.performanceBar, data.performance);
+  setRatio(el.quality, el.qualityBar, data.quality);
+
+  el.produced.textContent = formatNumber(data.produced);
+  el.good.textContent = formatNumber(data.good);
+  el.operating.textContent = formatDuration(data.operatingTimeMs);
+  el.capacity.textContent = `${formatNumber(data.nominalCapacityPerHour)} peças/h`;
+  el.oeePeriod.textContent = `últimos ${state.periodMinutes} min`;
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderAlerts(alerts) {
+  state.alerts = alerts;
+  el.alertsList.innerHTML = '';
+
+  const count = alerts.length;
+  el.alertsCount.textContent =
+    count === 0 ? 'nenhum ativo' : `${count} ativo${count === 1 ? '' : 's'}`;
+  el.alertsEmpty.style.display = count === 0 ? 'block' : 'none';
+
+  for (const alert of alerts) {
+    const item = document.createElement('li');
+    item.className = `alert-item ${alert.severity || 'warning'}`;
+
+    const main = document.createElement('div');
+    main.className = 'alert-main';
+
+    const severity = document.createElement('span');
+    severity.className = 'alert-severity';
+    severity.textContent = SEVERITY_LABELS[alert.severity] ?? alert.severity ?? 'Alerta';
+
+    const message = document.createElement('p');
+    message.className = 'alert-message';
+    message.textContent = alert.message;
+
+    const time = document.createElement('span');
+    time.className = 'alert-time';
+    time.textContent = formatDateTime(alert.created_at);
+
+    main.append(severity, message, time);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'alert-resolve';
+    button.dataset.id = String(alert.id);
+    button.textContent = 'Resolver';
+
+    item.append(main, button);
+    el.alertsList.append(item);
+  }
+}
+
+async function refreshAlerts() {
+  if (!state.machineId) {
+    renderAlerts([]);
+    return;
+  }
+
+  try {
+    const data = await getJson(
+      `/api/machines/${state.machineId}/alerts?status=open&limit=20`
+    );
+    renderAlerts(data.alerts || []);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function resolveAlertById(id) {
+  try {
+    const response = await fetch(`/api/alerts/${id}/resolve`, { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    await refreshAlerts();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function refreshTelemetry() {
+  if (!state.machineId) return;
+  try {
+    const data = await getJson(
+      `/api/machines/${state.machineId}/telemetry?limit=${TELEMETRY_LIMIT}`
+    );
+    state.samples = data.samples || [];
+    renderTelemetry(state.samples);
+    state.pollOk = true;
+    updateConnection();
+  } catch (error) {
+    console.error(error);
+    state.pollOk = false;
+    updateConnection();
+  }
+}
+
+async function refreshOee() {
+  if (!state.machineId) return;
+  const from = new Date(Date.now() - state.periodMinutes * 60000).toISOString();
+  try {
+    const data = await getJson(
+      `/api/machines/${state.machineId}/oee?from=${encodeURIComponent(from)}`
+    );
+    renderOee(data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function refreshAll() {
+  void refreshTelemetry();
+  void refreshOee();
+  void refreshAlerts();
+}
+
+async function loadMachines() {
+  try {
+    const data = await getJson('/api/machines');
+    state.machines = data.machines || [];
+
+    const select = el.machineSelect;
+    select.innerHTML = '';
+
+    if (state.machines.length === 0) {
+      select.add(new Option('Nenhuma máquina', ''));
+      select.disabled = true;
+      state.machineId = null;
+      state.machineCode = null;
+      state.samples = [];
+      renderPlaceholders();
+      renderOee({ nominalCapacityPerHour: 0 });
+      renderAlerts([]);
+      drawChart([]);
+      state.pollOk = true;
+      updateConnection();
+      return false;
+    }
+
+    select.disabled = false;
+    for (const machine of state.machines) {
+      select.add(new Option(machine.name || machine.code, String(machine.id)));
+    }
+
+    const selected =
+      state.machines.find((machine) => String(machine.id) === select.value) ?? state.machines[0];
+    state.machineId = selected.id;
+    state.machineCode = selected.code;
+    state.pollOk = true;
+    updateConnection();
+    return true;
+  } catch (error) {
+    console.error(error);
+    state.pollOk = false;
+    updateConnection();
+    return false;
+  }
+}
+
+el.machineSelect.addEventListener('change', () => {
+  const selected = state.machines.find(
+    (machine) => String(machine.id) === el.machineSelect.value
+  );
+  state.machineId = selected ? selected.id : null;
+  state.machineCode = selected ? selected.code : null;
+  state.samples = [];
+  state.lastSamples = [];
+  refreshAll();
+});
+
+el.periodSelect.addEventListener('change', () => {
+  state.periodMinutes = Number(el.periodSelect.value) || 60;
+  void refreshOee();
+});
+
+el.refresh.addEventListener('click', () => {
+  void loadMachines().then((hasMachines) => {
+    if (hasMachines) refreshAll();
+  });
+});
+
+el.alertsList.addEventListener('click', (event) => {
+  const button = event.target.closest('.alert-resolve');
+  if (!button) return;
+  void resolveAlertById(button.dataset.id);
+});
+
+window.addEventListener('resize', () => {
+  drawChart(state.lastSamples);
+});
+
+function connectStream() {
+  if (typeof EventSource === 'undefined') return;
+
+  const source = new EventSource('/api/stream');
+  state.stream = source;
+
+  source.addEventListener('open', () => {
+    state.streamOnline = true;
+    updateConnection();
+  });
+
+  source.addEventListener('telemetry', (event) => {
+    let payload;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (error) {
+      return;
+    }
+
+    if (!payload || payload.machineId !== state.machineCode) return;
+
+    state.samples = [
+      { recorded_at: payload.timestamp, payload },
+      ...state.samples,
+    ].slice(0, TELEMETRY_LIMIT);
+    renderTelemetry(state.samples);
+    state.streamOnline = true;
+    updateConnection();
+  });
+
+  source.addEventListener('alert', () => {
+    void refreshAlerts();
+  });
+
+  source.addEventListener('error', () => {
+    state.streamOnline = false;
+    updateConnection();
+  });
+}
+
+async function start() {
+  const hasMachines = await loadMachines();
+  if (hasMachines) refreshAll();
+
+  connectStream();
+
+  setInterval(async () => {
+    if (!state.machineId) {
+      const found = await loadMachines();
+      if (found) refreshAll();
+      return;
+    }
+    if (!state.streamOnline) void refreshTelemetry();
+  }, POLL_TELEMETRY_MS);
+
+  setInterval(() => {
+    if (state.machineId) void refreshOee();
+  }, POLL_OEE_MS);
+
+  setInterval(() => {
+    if (state.machineId) void refreshAlerts();
+  }, POLL_ALERTS_MS);
+}
+
+void start();

@@ -4,11 +4,39 @@ Interface web para monitoramento em tempo real e consulta de indicadores.
 
 ## Estrutura
 
-- `frontend/` — aplicação web (a ser inicializada).
+- `frontend/` — aplicação web em HTML/CSS/JS puro (sem build), servida pelo backend.
 
-## Telas previstas
+## Executar
 
-- Visão geral das máquinas.
-- Detalhe de máquina (telemetria em tempo real).
-- Painel de OEE e histórico.
-- Lista de alertas.
+Suba o backend (que serve o dashboard na raiz):
+
+```bash
+cd backend/node-api
+npm start
+```
+
+Abra `http://localhost:3000` (ou o `PORT` configurado).
+
+## Funcionalidades
+
+- Seleção de máquina.
+- Estado da linha em tempo (quase) real: operação, etapa, esteira, EV, AT e
+  nível de envase.
+- Contadores de envasadas, tampadas e produção total.
+- Gráfico do nível de envase das últimas amostras.
+- Cartões de OEE, disponibilidade, performance e qualidade com filtro de período
+  (15 min, 1 h, 6 h, 24 h).
+- Painel de alertas abertos, com severidade, horário e ação para resolver.
+
+## Atualização
+
+- Telemetria: tempo real via SSE em `/api/stream`; quando o stream não está
+  disponível, há fallback para polling a cada 3 s em
+  `/api/machines/:id/telemetry`.
+- Indicadores: polling a cada 15 s em `/api/machines/:id/oee`.
+- Alertas: eventos `alert` no SSE; a lista aberta também é reconsultada a cada
+  15 s como garantia.
+- O indicador de conexão mostra `Tempo real`, `Polling` ou `Offline`.
+
+O contrato consumido está documentado em
+[`docs/openapi.yaml`](../docs/openapi.yaml).

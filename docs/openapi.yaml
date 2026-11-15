@@ -1,0 +1,518 @@
+openapi: 3.0.3
+info:
+  title: Plataforma Industrial 4.0 — API
+  version: 0.1.0
+  description: |
+    API de ingestão e consulta da Plataforma Industrial 4.0.
+    Recebe telemetria da linha de envase, expõe o histórico e calcula
+    indicadores de OEE a partir dos dados ingeridos.
+servers:
+  - url: http://localhost:3000
+    description: Ambiente local
+tags:
+  - name: Ingestão
+  - name: Consultas
+  - name: Indicadores
+  - name: Tempo real
+  - name: Alertas
+  - name: Saúde
+
+paths:
+  /health:
+    get:
+      tags: [Saúde]
+      summary: Verifica a saúde do serviço
+      responses:
+        '200':
+          description: Serviço no ar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/telemetry:
+    post:
+      tags: [Ingestão]
+      summary: Recebe uma amostra de telemetria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryPayload'
+      responses:
+        '202':
+          description: Amostra aceita e persistida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400':
+          description: Payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Erro interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/machines:
+    get:
+      tags: [Consultas]
+      summary: Lista as máquinas cadastradas
+      responses:
+        '200':
+          description: Lista de máquinas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  machines:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Machine'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/machines/{id}/telemetry:
+    get:
+      tags: [Consultas]
+      summary: Consulta a telemetria histórica de uma máquina
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Amostras mais recentes primeiro
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  machineId:
+                    type: integer
+                    example: 1
+                  limit:
+                    type: integer
+                    example: 100
+                  samples:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TelemetrySample'
+        '400':
+          description: Parâmetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/machines/{id}/oee:
+    get:
+      tags: [Indicadores]
+      summary: Calcula disponibilidade, performance, qualidade e OEE
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/NominalCapacityPerHour'
+      responses:
+        '200':
+          description: Indicadores do período
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oee'
+        '400':
+          description: Parâmetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/stream:
+    get:
+      tags: [Tempo real]
+      summary: Assina o stream de telemetria (SSE)
+      description: |
+        Abre uma conexão `text/event-stream`. O servidor envia:
+
+        - `event: ready` ao conectar;
+        - `event: telemetry` a cada amostra de telemetria ingerida;
+        - comentários `: keep-alive` periodicamente.
+
+        O cliente deve reconectar automaticamente (o servidor envia `retry`).
+      responses:
+        '200':
+          description: Stream aberto
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: ready
+                data: {}
+
+                event: telemetry
+                data: {"machineId":"machine-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
+
+  /api/machines/{id}/alerts:
+    get:
+      tags: [Alertas]
+      summary: Lista alertas da máquina
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+        - name: status
+          in: query
+          required: false
+          description: Filtra por alertas abertos ou todos
+          schema:
+            type: string
+            enum: [open, all]
+            default: open
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Alertas da máquina
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  machineId:
+                    type: integer
+                  status:
+                    type: string
+                    example: open
+                  limit:
+                    type: integer
+                    example: 20
+                  alerts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+        '400':
+          description: Parâmetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/alerts/{id}/resolve:
+    post:
+      tags: [Alertas]
+      summary: Resolve um alerta aberto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador numérico do alerta
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Alerta resolvido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert:
+                    $ref: '#/components/schemas/Alert'
+        '400':
+          description: Identificador inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Alerta não encontrado ou já resolvido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    MachineId:
+      name: id
+      in: path
+      required: true
+      description: Identificador numérico da máquina
+      schema:
+        type: integer
+        minimum: 1
+    From:
+      name: from
+      in: query
+      required: false
+      description: Início do período (data ISO 8601)
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Fim do período (data ISO 8601)
+      schema:
+        type: string
+        format: date-time
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Quantidade máxima de amostras (1–1000)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    NominalCapacityPerHour:
+      name: nominalCapacityPerHour
+      in: query
+      required: false
+      description: Capacidade nominal em peças por hora
+      schema:
+        type: number
+        exclusiveMinimum: true
+        minimum: 0
+        default: 400
+
+  responses:
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    LineState:
+      type: object
+      required:
+        - step
+        - running
+        - conveyorOn
+        - evOn
+        - atOn
+        - sensorS1
+        - sensorS2
+        - bottlePositioned
+        - evInterlock
+        - atInterlock
+        - fillPercent
+      properties:
+        step:
+          type: integer
+          minimum: 0
+          example: 2
+        running:
+          type: boolean
+        conveyorOn:
+          type: boolean
+        evOn:
+          type: boolean
+          description: Válvula de envase; exige bottlePositioned.
+        atOn:
+          type: boolean
+          description: Aplicadora de tampa; exige sensorS2.
+        sensorS1:
+          type: boolean
+        sensorS2:
+          type: boolean
+        bottlePositioned:
+          type: boolean
+        evInterlock:
+          type: boolean
+        atInterlock:
+          type: boolean
+        fillPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    Production:
+      type: object
+      required: [filled, capped, total]
+      properties:
+        filled:
+          type: integer
+          minimum: 0
+        capped:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    TelemetryPayload:
+      type: object
+      required: [machineId, timestamp, line, production]
+      properties:
+        machineId:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: machine-01
+        timestamp:
+          type: string
+          format: date-time
+        plcVersion:
+          type: string
+          nullable: true
+          example: 1.0.0
+        line:
+          $ref: '#/components/schemas/LineState'
+        production:
+          $ref: '#/components/schemas/Production'
+
+    TelemetrySample:
+      type: object
+      properties:
+        id:
+          type: integer
+        recorded_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/TelemetryPayload'
+
+    Machine:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+          example: machine-01
+        name:
+          type: string
+          example: machine-01
+        location:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: integer
+        machine_id:
+          type: integer
+        sensor_code:
+          type: string
+          example: fillPercent
+        message:
+          type: string
+          example: Nível de envase abaixo do limite mínimo (20% < 50%).
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Oee:
+      type: object
+      properties:
+        machineId:
+          type: integer
+        from:
+          type: string
+          format: date-time
+          nullable: true
+        to:
+          type: string
+          format: date-time
+          nullable: true
+        availability:
+          type: number
+          minimum: 0
+          maximum: 1
+        performance:
+          type: number
+          minimum: 0
+          maximum: 1
+        quality:
+          type: number
+          minimum: 0
+          maximum: 1
+        oee:
+          type: number
+          minimum: 0
+          maximum: 1
+        produced:
+          type: integer
+        good:
+          type: integer
+        operatingTimeMs:
+          type: integer
+        plannedTimeMs:
+          type: integer
+        nominalCapacityPerHour:
+          type: number
+
+    Accepted:
+      type: object
+      properties:
+        status:
+          type: string
+          example: accepted
+        machineId:
+          type: string
+          example: machine-01
+        recordedAt:
+          type: string
+          format: date-time
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: invalid_payload
+        details:
+          type: array
+          items:
+            type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: internal_error

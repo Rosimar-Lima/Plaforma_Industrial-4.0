@@ -18,5 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build: ./backend/node-api
+    container_name: industrial-backend
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-industrial}:${POSTGRES_PASSWORD:-industrial}@postgres:5432/${POSTGRES_DB:-industrial}
+      NOMINAL_CAPACITY_PER_HOUR: ${NOMINAL_CAPACITY_PER_HOUR:-400}
+      ALERT_FILL_PERCENT_MIN: ${ALERT_FILL_PERCENT_MIN:-0}
+      ALERT_FILL_PERCENT_MAX: ${ALERT_FILL_PERCENT_MAX:-100}
+      ALERT_STOPPED_MS: ${ALERT_STOPPED_MS:-60000}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:

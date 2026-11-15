@@ -17,12 +17,12 @@
 Objetivo:
 Criar uma fonte de dados industriais independente de hardware.
 
-- [ ] Simulador de PLC
-- [ ] Geração de telemetria industrial
-- [ ] API de ingestão
-- [ ] Validação de payload
-- [ ] Persistência inicial no PostgreSQL
-- [ ] Modelagem do banco de dados
+- [x] Simulador de PLC
+- [x] Geração de telemetria industrial
+- [x] API de ingestão
+- [x] Validação de payload
+- [x] Persistência inicial no PostgreSQL
+- [x] Modelagem do banco de dados
 
 Entregável:
 
@@ -35,15 +35,15 @@ Entregável:
 Objetivo:
 Transformar dados brutos em informação.
 
-- [ ] Produção total
+- [x] Produção total
 - [ ] Produção por hora
 - [ ] Produção por turno
 - [ ] Tempo operando
 - [ ] Tempo parado
-- [ ] Disponibilidade
-- [ ] Performance
-- [ ] Qualidade
-- [ ] OEE consolidado
+- [x] Disponibilidade
+- [x] Performance
+- [x] Qualidade
+- [x] OEE consolidado
 
 Entregável:
 
@@ -56,11 +56,11 @@ Entregável:
 Objetivo:
 Visualização operacional em tempo real.
 
-- [ ] Dashboard Web
-- [ ] Visão por máquina
+- [x] Dashboard Web
+- [x] Visão por máquina
 - [ ] Histórico de produção
-- [ ] Filtros de período
-- [ ] Indicadores em tempo real
+- [x] Filtros de período
+- [x] Indicadores em tempo real
 - [ ] Painel consolidado de OEE
 
 Entregável:
@@ -74,10 +74,10 @@ Entregável:
 Objetivo:
 Substituir o simulador por equipamentos reais.
 
-- [ ] Gateway Industrial
-- [ ] Integração TwinCAT ADS
-- [ ] Integração OPC-UA
-- [ ] Integração Modbus TCP
+- [x] Gateway Industrial
+- [x] Integração TwinCAT ADS
+- [x] Integração OPC-UA
+- [x] Integração Modbus TCP
 
 Entregável:
 
@@ -90,10 +90,10 @@ Entregável:
 Objetivo:
 Detectar eventos industriais relevantes.
 
-- [ ] Alarmes
-- [ ] Limites operacionais
-- [ ] Notificações
-- [ ] Histórico de eventos
+- [x] Alarmes
+- [x] Limites operacionais
+- [x] Notificações
+- [x] Histórico de eventos
 
 Entregável:
 
