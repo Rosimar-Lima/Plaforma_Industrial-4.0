@@ -13,6 +13,7 @@ const DEFAULTS = Object.freeze({
   alertFillPercentMax: 100,
   alertStoppedMs: 60000,
   dashboardDir: path.resolve(__dirname, '../../../dashboard/frontend'),
+  maintenanceConfigPath: path.resolve(__dirname, '../config/maintenance.json'),
 });
 
 function loadEnvFiles() {
@@ -75,6 +76,9 @@ function loadConfig(env = process.env) {
       stoppedMs,
     },
     dashboardDir: env.DASHBOARD_DIR ? path.resolve(env.DASHBOARD_DIR) : DEFAULTS.dashboardDir,
+    maintenanceConfigPath: env.MAINTENANCE_CONFIG
+      ? path.resolve(env.MAINTENANCE_CONFIG)
+      : DEFAULTS.maintenanceConfigPath,
   };
 }
 

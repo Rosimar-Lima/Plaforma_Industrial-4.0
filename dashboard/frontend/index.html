@@ -35,61 +35,50 @@
     </header>
 
     <main class="layout">
-      <section class="panel status-panel">
-        <div class="panel-head">
-          <h2>Estado da linha</h2>
-          <span id="last-update" class="muted">sem dados</span>
-        </div>
-        <div class="status-grid">
-          <article class="stat">
-            <span class="stat-label">Operação</span>
-            <strong id="stat-running" class="stat-value">—</strong>
-          </article>
-          <article class="stat">
-            <span class="stat-label">Etapa</span>
-            <strong id="stat-step" class="stat-value">—</strong>
-          </article>
-          <article class="stat">
-            <span class="stat-label">Esteira</span>
-            <strong id="stat-conveyor" class="stat-value">—</strong>
-          </article>
-          <article class="stat">
-            <span class="stat-label">Envase (EV)</span>
-            <strong id="stat-ev" class="stat-value">—</strong>
-          </article>
-          <article class="stat">
-            <span class="stat-label">Tampagem (AT)</span>
-            <strong id="stat-at" class="stat-value">—</strong>
-          </article>
-          <article class="stat">
-            <span class="stat-label">Nível de envase</span>
-            <strong id="stat-fill" class="stat-value">—</strong>
-          </article>
-        </div>
-        <div class="production-grid">
-          <article class="prod">
-            <span class="stat-label">Envasadas</span>
-            <strong id="prod-filled">0</strong>
-          </article>
-          <article class="prod">
-            <span class="stat-label">Tampadas</span>
-            <strong id="prod-capped">0</strong>
-          </article>
-          <article class="prod accent">
-            <span class="stat-label">Produção total</span>
-            <strong id="prod-total">0</strong>
-          </article>
-        </div>
-      </section>
+      <div class="stack">
+        <section class="panel status-panel">
+          <div class="panel-head">
+            <h2>Operação e produção</h2>
+            <span id="last-update" class="muted">sem dados</span>
+          </div>
+          <div class="summary-grid">
+            <article class="stat operation">
+              <span class="stat-label">Operação</span>
+              <strong id="stat-running" class="stat-value">—</strong>
+            </article>
+            <article class="prod">
+              <span class="stat-label">Envasadas</span>
+              <strong id="prod-filled">0</strong>
+            </article>
+            <article class="prod">
+              <span class="stat-label">Tampadas</span>
+              <strong id="prod-capped">0</strong>
+            </article>
+            <article class="prod accent">
+              <span class="stat-label">Produção total</span>
+              <strong id="prod-total">0</strong>
+            </article>
+          </div>
+        </section>
 
-      <section class="panel chart-panel">
-        <div class="panel-head">
-          <h2>Nível de envase</h2>
-          <span class="muted">últimas amostras</span>
-        </div>
-        <canvas id="chart" height="180"></canvas>
-        <p id="chart-empty" class="empty">Sem amostras para exibir.</p>
-      </section>
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <h2>Nível de envase</h2>
+            <span class="muted">últimas amostras</span>
+          </div>
+          <canvas id="chart" height="180"></canvas>
+          <p id="chart-empty" class="empty">Sem amostras para exibir.</p>
+        </section>
+
+        <section class="panel alerts-panel">
+          <div class="panel-head">
+            <h2>Alertas</h2>
+            <span id="alerts-count" class="muted">nenhum ativo</span>
+          </div>
+          <ul id="alerts-list" class="alert-list"></ul>
+          <p id="alerts-empty" class="empty">Nenhum alerta ativo.</p>
+        </section>
+      </div>
 
       <section class="panel oee-panel">
         <div class="panel-head">
@@ -126,13 +115,34 @@
         </dl>
       </section>
 
-      <section class="panel alerts-panel">
+      <section class="panel maintenance-panel">
         <div class="panel-head">
-          <h2>Alertas</h2>
-          <span id="alerts-count" class="muted">nenhum ativo</span>
+          <h2>Manutenção preventiva</h2>
+          <span id="maintenance-summary" class="muted">—</span>
         </div>
-        <ul id="alerts-list" class="alert-list"></ul>
-        <p id="alerts-empty" class="empty">Nenhum alerta ativo.</p>
+        <div id="maintenance-components" class="maintenance-grid"></div>
+        <p id="maintenance-empty" class="empty">Sem componentes monitorados.</p>
+
+        <div class="maintenance-orders">
+          <h3>Ordens de manutenção</h3>
+          <div class="table-wrap">
+            <table class="orders-table">
+              <thead>
+                <tr>
+                  <th>OS</th>
+                  <th>Componente</th>
+                  <th>Status</th>
+                  <th>Prioridade</th>
+                  <th>Peças</th>
+                  <th>ERP</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="maintenance-orders-body"></tbody>
+            </table>
+          </div>
+          <p id="maintenance-orders-empty" class="empty">Nenhuma OS aberta.</p>
+        </div>
       </section>
     </main>
 

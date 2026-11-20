@@ -92,6 +92,60 @@ function createFakeRepository() {
         resolved_at: '2026-01-01T00:01:00.000Z',
       };
     },
+    async getMaintenanceOverview(machineId) {
+      return {
+        machineId,
+        warnRatio: 0.8,
+        components: [
+          {
+            code: 'fill-valve',
+            name: 'Válvula de envase',
+            status: 'warning',
+            usageRatio: 0.85,
+            cycles: 340,
+            mtbfCycles: 400,
+            remainingCycles: 60,
+            order: { id: 3, status: 'planned', priority: 'high' },
+          },
+        ],
+        orders: [
+          {
+            id: 3,
+            machine_id: machineId,
+            component_code: 'fill-valve',
+            status: 'planned',
+            priority: 'high',
+            parts: [{ code: 'KIT-VAL-FILL', name: 'Kit', quantity: 1, status: 'reserved' }],
+            erp: { external_id: 'ERP-3-X', status: 'sent' },
+          },
+        ],
+      };
+    },
+    async completeMaintenanceOrder(id) {
+      if (id !== 3) return null;
+      return {
+        id,
+        machine_id: 1,
+        component_code: 'fill-valve',
+        status: 'completed',
+        priority: 'high',
+        completed_at: '2026-01-01T00:10:00.000Z',
+      };
+    },
+    async listErpOutbox({ limit = 20 } = {}) {
+      return [
+        {
+          id: 1,
+          order_id: 3,
+          event_type: 'maintenance_order.created',
+          status: 'sent',
+          external_id: 'ERP-3-X',
+          payload: {},
+          created_at: '2026-01-01T00:00:00.000Z',
+          sent_at: '2026-01-01T00:00:00.000Z',
+        },
+      ].slice(0, limit);
+    },
   };
 }
 
@@ -473,6 +527,130 @@ test('GET / serve o dashboard estático', async () => {
     const html = await response.text();
     assert.ok(html.includes('Plataforma Industrial 4.0'));
     assert.ok(html.includes('alerts-list'));
+    assert.ok(html.includes('maintenance-panel'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/maintenance retorna vida útil e OS abertas', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/1/maintenance`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.machineId, 1);
+    assert.equal(body.components.length, 1);
+    assert.equal(body.components[0].status, 'warning');
+    assert.equal(body.orders.length, 1);
+    assert.equal(body.orders[0].erp.external_id, 'ERP-3-X');
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/maintenance valida o id', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/abc/maintenance`);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/maintenance/orders/:id/complete conclui e publica no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const app = await startApp(createFakeRepository(), { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/maintenance/orders/3/complete`, {
+      method: 'POST',
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.order.status, 'completed');
+    assert.equal(broadcasts[0].event, 'maintenance');
+    assert.equal(broadcasts[0].data.action, 'completed');
+
+    const missing = await fetch(`${app.baseUrl}/api/maintenance/orders/999/complete`, {
+      method: 'POST',
+    });
+    assert.equal(missing.status, 404);
+
+    const invalid = await fetch(`${app.baseUrl}/api/maintenance/orders/abc/complete`, {
+      method: 'POST',
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/integrations/erp/outbox lista envios ao ERP', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/integrations/erp/outbox?limit=5`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.limit, 5);
+    assert.equal(body.outbox.length, 1);
+    assert.equal(body.outbox[0].external_id, 'ERP-3-X');
+
+    const invalid = await fetch(`${app.baseUrl}/api/integrations/erp/outbox?limit=0`);
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error, 'invalid_limit');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/telemetry publica eventos de manutenção no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const repository = createFakeRepository();
+  repository.ingestTelemetry = async (record) => ({
+    machineId: 1,
+    recordedAt: record.timestamp,
+    alerts: [],
+    maintenance: [
+      {
+        action: 'created',
+        order: { id: 3, component_code: 'fill-valve', status: 'planned' },
+      },
+    ],
+  });
+  const app = await startApp(repository, { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validPayload()),
+    });
+
+    assert.equal(response.status, 202);
+    assert.equal(broadcasts.length, 2);
+    assert.equal(broadcasts[1].event, 'maintenance');
+    assert.equal(broadcasts[1].data.order.id, 3);
   } finally {
     await app.close();
   }

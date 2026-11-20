@@ -153,6 +153,8 @@ paths:
 
         - `event: ready` ao conectar;
         - `event: telemetry` a cada amostra de telemetria ingerida;
+        - `event: alert` quando um alerta é aberto ou resolvido;
+        - `event: maintenance` quando uma OS é criada ou concluída;
         - comentários `: keep-alive` periodicamente.
 
         O cliente deve reconectar automaticamente (o servidor envia `retry`).
@@ -169,6 +171,9 @@ paths:
 
                 event: telemetry
                 data: {"machineId":"machine-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
+
+                event: maintenance
+                data: {"machineId":1,"action":"created","order":{"id":3,"component_code":"fill-valve","status":"planned"}}
 
   /api/machines/{id}/alerts:
     get:
@@ -251,6 +256,102 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Alerta não encontrado ou já resolvido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/machines/{id}/maintenance:
+    get:
+      tags: [Manutenção]
+      summary: Consulta a vida útil dos componentes e as OS ativas
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+      responses:
+        '200':
+          description: Visão de manutenção da máquina
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceOverview'
+        '400':
+          description: Identificador inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/maintenance/orders/{id}/complete:
+    post:
+      tags: [Manutenção]
+      summary: Conclui uma OS e reseta o contador do componente
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador numérico da OS
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: OS concluída
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/MaintenanceOrder'
+        '400':
+          description: Identificador inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: OS não encontrada ou já concluída
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/integrations/erp/outbox:
+    get:
+      tags: [Integrações]
+      summary: Lista os eventos publicados na outbox do ERP
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Eventos da outbox
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: integer
+                    example: 20
+                  outbox:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ErpOutboxEntry'
+        '400':
+          description: Limite inválido
           content:
             application/json:
               schema:
@@ -485,6 +586,152 @@ components:
           type: integer
         nominalCapacityPerHour:
           type: number
+
+    MaintenancePart:
+      type: object
+      properties:
+        code:
+          type: string
+          example: KIT-VAL-FILL
+        name:
+          type: string
+          example: Kit de reparo da válvula de envase
+        quantity:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          example: reserved
+
+    MaintenanceOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        machine_id:
+          type: integer
+        component_code:
+          type: string
+          example: fill-valve
+        status:
+          type: string
+          enum: [planned, open, in_progress, completed]
+        priority:
+          type: string
+          enum: [high, critical]
+        source_cycles:
+          type: string
+          description: Ciclos do componente no momento da abertura da OS
+        due_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenancePart'
+        erp:
+          type: object
+          nullable: true
+          properties:
+            event:
+              type: string
+              example: maintenance_order.created
+            status:
+              type: string
+              example: sent
+            external_id:
+              type: string
+              example: ERP-1-MWOEZ6OF
+            sent_at:
+              type: string
+              format: date-time
+
+    MaintenanceComponent:
+      type: object
+      properties:
+        code:
+          type: string
+          example: fill-valve
+        name:
+          type: string
+          example: Válvula de envase
+        kind:
+          type: string
+          example: valve
+        source:
+          type: string
+          enum: [filled, capped, total]
+        cycles:
+          type: integer
+        mtbfCycles:
+          type: integer
+        usageRatio:
+          type: number
+          minimum: 0
+          maximum: 1
+        remainingCycles:
+          type: integer
+        status:
+          type: string
+          enum: [ok, warning, critical]
+        order:
+          allOf:
+            - $ref: '#/components/schemas/MaintenanceOrder'
+          nullable: true
+
+    MaintenanceOverview:
+      type: object
+      properties:
+        machineId:
+          type: integer
+        warnRatio:
+          type: number
+          minimum: 0.1
+          maximum: 0.99
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceComponent'
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceOrder'
+
+    ErpOutboxEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        order_id:
+          type: integer
+        event_type:
+          type: string
+          example: maintenance_order.created
+        status:
+          type: string
+          example: sent
+        external_id:
+          type: string
+          example: ERP-1-MWOEZ6OF
+        payload:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
 
     Accepted:
       type: object

@@ -1,0 +1,53 @@
+{
+  "warnRatio": 0.8,
+  "components": [
+    {
+      "code": "conveyor-bearing",
+      "name": "Rolamento da esteira",
+      "kind": "bearing",
+      "source": "total",
+      "mtbfCycles": 600,
+      "initialCycles": 300,
+      "parts": [
+        { "code": "BRG-6204", "name": "Rolamento 6204", "quantity": 2 },
+        { "code": "GRX-LITIO", "name": "Graxa de lítio", "quantity": 1 }
+      ]
+    },
+    {
+      "code": "conveyor-motor",
+      "name": "Motor da esteira",
+      "kind": "motor",
+      "source": "total",
+      "mtbfCycles": 900,
+      "initialCycles": 540,
+      "parts": [
+        { "code": "MTR-0.5CV", "name": "Motor 0,5 cv", "quantity": 1 },
+        { "code": "BELT-A42", "name": "Correia A42", "quantity": 2 }
+      ]
+    },
+    {
+      "code": "fill-valve",
+      "name": "Válvula de envase",
+      "kind": "valve",
+      "source": "filled",
+      "mtbfCycles": 400,
+      "initialCycles": 340,
+      "parts": [
+        { "code": "KIT-VAL-FILL", "name": "Kit de reparo da válvula de envase", "quantity": 1 },
+        { "code": "ORG-22", "name": "O-ring 22 mm", "quantity": 4 }
+      ]
+    },
+    {
+      "code": "cap-valve",
+      "name": "Válvula de tampagem",
+      "kind": "valve",
+      "source": "capped",
+      "mtbfCycles": 350,
+      "initialCycles": 355,
+      "parts": [
+        { "code": "KIT-CAP", "name": "Kit de reparo do cabeçote de tampagem", "quantity": 1 },
+        { "code": "MOLA-CAP", "name": "Mola do cabeçote", "quantity": 2 }
+      ]
+    }
+  ]
+}

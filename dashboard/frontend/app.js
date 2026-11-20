@@ -3,6 +3,7 @@
 const POLL_TELEMETRY_MS = 3000;
 const POLL_OEE_MS = 15000;
 const POLL_ALERTS_MS = 15000;
+const POLL_MAINTENANCE_MS = 15000;
 const TELEMETRY_LIMIT = 120;
 
 const SEVERITY_LABELS = {
@@ -11,11 +12,19 @@ const SEVERITY_LABELS = {
   info: 'Info',
 };
 
-const STEP_LABELS = {
-  0: '0 · transporte',
-  1: '1 · sensor S1',
-  2: '2 · envase',
-  3: '3 · saída',
+const MAINTENANCE_STATUS_LABELS = {
+  ok: 'OK',
+  warning: 'Atenção',
+  critical: 'Crítico',
+  planned: 'Planejada',
+  open: 'Aberta',
+  in_progress: 'Em execução',
+  completed: 'Concluída',
+};
+
+const PRIORITY_LABELS = {
+  high: 'Alta',
+  critical: 'Crítica',
 };
 
 const state = {
@@ -38,11 +47,6 @@ const el = {
   connection: document.getElementById('connection'),
   lastUpdate: document.getElementById('last-update'),
   running: document.getElementById('stat-running'),
-  step: document.getElementById('stat-step'),
-  conveyor: document.getElementById('stat-conveyor'),
-  ev: document.getElementById('stat-ev'),
-  at: document.getElementById('stat-at'),
-  fill: document.getElementById('stat-fill'),
   filled: document.getElementById('prod-filled'),
   capped: document.getElementById('prod-capped'),
   total: document.getElementById('prod-total'),
@@ -64,6 +68,11 @@ const el = {
   alertsList: document.getElementById('alerts-list'),
   alertsCount: document.getElementById('alerts-count'),
   alertsEmpty: document.getElementById('alerts-empty'),
+  maintenanceSummary: document.getElementById('maintenance-summary'),
+  maintenanceComponents: document.getElementById('maintenance-components'),
+  maintenanceEmpty: document.getElementById('maintenance-empty'),
+  maintenanceOrdersBody: document.getElementById('maintenance-orders-body'),
+  maintenanceOrdersEmpty: document.getElementById('maintenance-orders-empty'),
 };
 
 async function getJson(url) {
@@ -123,11 +132,6 @@ function setBoolean(elmt, active, activeLabel, inactiveLabel) {
 
 function renderPlaceholders() {
   el.running.textContent = '—';
-  el.step.textContent = '—';
-  el.conveyor.textContent = '—';
-  el.ev.textContent = '—';
-  el.at.textContent = '—';
-  el.fill.textContent = '—';
   el.filled.textContent = '0';
   el.capped.textContent = '0';
   el.total.textContent = '0';
@@ -146,11 +150,6 @@ function renderTelemetry(samples) {
   const production = latest.payload?.production ?? {};
 
   setBoolean(el.running, line.running, 'Em operação', 'Parada');
-  el.step.textContent = STEP_LABELS[line.step] ?? `etapa ${line.step ?? '—'}`;
-  setBoolean(el.conveyor, line.conveyorOn, 'Ligada', 'Parada');
-  setBoolean(el.ev, line.evOn, 'Enchendo', 'Inativa');
-  setBoolean(el.at, line.atOn, 'Tampando', 'Inativa');
-  el.fill.textContent = `${formatNumber(line.fillPercent)}%`;
 
   el.filled.textContent = formatNumber(production.filled);
   el.capped.textContent = formatNumber(production.capped);
@@ -331,6 +330,130 @@ async function resolveAlertById(id) {
   }
 }
 
+function renderMaintenanceOrders(orders, names) {
+  el.maintenanceOrdersBody.innerHTML = '';
+  el.maintenanceOrdersEmpty.style.display = orders.length === 0 ? 'block' : 'none';
+
+  for (const order of orders) {
+    const row = document.createElement('tr');
+
+    const idCell = document.createElement('td');
+    idCell.textContent = `#${order.id}`;
+
+    const componentCell = document.createElement('td');
+    componentCell.textContent = names.get(order.component_code) ?? order.component_code;
+
+    const statusCell = document.createElement('td');
+    const status = document.createElement('span');
+    status.className = `status-pill ${order.status}`;
+    status.textContent = MAINTENANCE_STATUS_LABELS[order.status] ?? order.status;
+    statusCell.append(status);
+
+    const priorityCell = document.createElement('td');
+    priorityCell.textContent = PRIORITY_LABELS[order.priority] ?? order.priority;
+
+    const partsCell = document.createElement('td');
+    partsCell.textContent = (order.parts ?? [])
+      .map((part) => `${part.quantity}x ${part.code}`)
+      .join(', ') || '—';
+
+    const erpCell = document.createElement('td');
+    erpCell.textContent = order.erp?.external_id ?? '—';
+
+    const actionCell = document.createElement('td');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'order-action';
+    button.dataset.id = String(order.id);
+    button.textContent = 'Concluir';
+    actionCell.append(button);
+
+    row.append(idCell, componentCell, statusCell, priorityCell, partsCell, erpCell, actionCell);
+    el.maintenanceOrdersBody.append(row);
+  }
+}
+
+function renderMaintenance(data) {
+  const components = data?.components ?? [];
+  const orders = data?.orders ?? [];
+  const names = new Map(components.map((component) => [component.code, component.name]));
+
+  el.maintenanceComponents.innerHTML = '';
+  el.maintenanceEmpty.style.display = components.length === 0 ? 'block' : 'none';
+
+  const attention = components.filter((component) => component.status !== 'ok').length;
+  el.maintenanceSummary.textContent =
+    components.length === 0
+      ? '—'
+      : `${components.length} componentes · ${attention} em atenção`;
+
+  for (const component of components) {
+    const card = document.createElement('article');
+    card.className = `maintenance-card ${component.status}`;
+
+    const head = document.createElement('div');
+    head.className = 'maintenance-card-head';
+
+    const label = document.createElement('span');
+    label.className = 'stat-label';
+    label.textContent = component.name;
+
+    const status = document.createElement('span');
+    status.className = 'maintenance-status';
+    status.textContent = MAINTENANCE_STATUS_LABELS[component.status] ?? component.status;
+
+    head.append(label, status);
+
+    const value = document.createElement('strong');
+    value.textContent = `${Math.round(component.usageRatio * 100)}%`;
+
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('span');
+    fill.style.width = `${(component.usageRatio * 100).toFixed(1)}%`;
+    bar.append(fill);
+
+    const meta = document.createElement('p');
+    meta.className = 'maintenance-meta';
+    meta.textContent =
+      `${formatNumber(component.cycles)} / ${formatNumber(component.mtbfCycles)} ciclos` +
+      ` · restam ${formatNumber(component.remainingCycles)}`;
+
+    card.append(head, value, bar, meta);
+    el.maintenanceComponents.append(card);
+  }
+
+  renderMaintenanceOrders(orders, names);
+}
+
+async function refreshMaintenance() {
+  if (!state.machineId) {
+    renderMaintenance({ components: [], orders: [] });
+    return;
+  }
+
+  try {
+    const data = await getJson(`/api/machines/${state.machineId}/maintenance`);
+    renderMaintenance(data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function completeMaintenanceOrder(id) {
+  try {
+    const response = await fetch(`/api/maintenance/orders/${id}/complete`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    await Promise.all([refreshMaintenance(), refreshAlerts()]);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 async function refreshTelemetry() {
   if (!state.machineId) return;
   try {
@@ -365,6 +488,7 @@ function refreshAll() {
   void refreshTelemetry();
   void refreshOee();
   void refreshAlerts();
+  void refreshMaintenance();
 }
 
 async function loadMachines() {
@@ -384,6 +508,7 @@ async function loadMachines() {
       renderPlaceholders();
       renderOee({ nominalCapacityPerHour: 0 });
       renderAlerts([]);
+      renderMaintenance({ components: [], orders: [] });
       drawChart([]);
       state.pollOk = true;
       updateConnection();
@@ -438,6 +563,12 @@ el.alertsList.addEventListener('click', (event) => {
   void resolveAlertById(button.dataset.id);
 });
 
+el.maintenanceOrdersBody.addEventListener('click', (event) => {
+  const button = event.target.closest('.order-action');
+  if (!button) return;
+  void completeMaintenanceOrder(button.dataset.id);
+});
+
 window.addEventListener('resize', () => {
   drawChart(state.lastSamples);
 });
@@ -476,6 +607,11 @@ function connectStream() {
     void refreshAlerts();
   });
 
+  source.addEventListener('maintenance', () => {
+    void refreshMaintenance();
+    void refreshAlerts();
+  });
+
   source.addEventListener('error', () => {
     state.streamOnline = false;
     updateConnection();
@@ -504,6 +640,10 @@ async function start() {
   setInterval(() => {
     if (state.machineId) void refreshAlerts();
   }, POLL_ALERTS_MS);
+
+  setInterval(() => {
+    if (state.machineId) void refreshMaintenance();
+  }, POLL_MAINTENANCE_MS);
 }
 
 void start();

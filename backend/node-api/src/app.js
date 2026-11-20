@@ -62,6 +62,13 @@ function createApp({
           alert: event.alert,
         });
       }
+      for (const event of saved.maintenance ?? []) {
+        streamHub.broadcast('maintenance', {
+          machineId: result.value.machineId,
+          action: event.action,
+          order: event.order,
+        });
+      }
       res.status(202).json({
         status: 'accepted',
         machineId: result.value.machineId,
@@ -193,6 +200,62 @@ function createApp({
       });
 
       res.json({ alert });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/machines/:id/maintenance', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    try {
+      const overview = await repository.getMaintenanceOverview(machineId);
+      res.json(overview);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/maintenance/orders/:id/complete', async (req, res, next) => {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId < 1) {
+      res.status(400).json({ error: 'invalid_maintenance_order_id' });
+      return;
+    }
+
+    try {
+      const order = await repository.completeMaintenanceOrder(orderId);
+      if (!order) {
+        res.status(404).json({ error: 'maintenance_order_not_found' });
+        return;
+      }
+
+      streamHub.broadcast('maintenance', {
+        machineId: order.machine_id,
+        action: 'completed',
+        order,
+      });
+
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/integrations/erp/outbox', async (req, res, next) => {
+    const limit = parseLimit(req.query.limit, { fallback: 20, max: 100 });
+    if (limit === null) {
+      res.status(400).json({ error: 'invalid_limit' });
+      return;
+    }
+
+    try {
+      const outbox = await repository.listErpOutbox({ limit });
+      res.json({ limit, outbox });
     } catch (error) {
       next(error);
     }

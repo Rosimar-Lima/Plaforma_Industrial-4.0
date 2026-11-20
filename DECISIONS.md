@@ -327,3 +327,40 @@ intercambiáveis.
   Compose central.
 - A etapa (`step`) é opcional no mapa e estimada quando o PLC não a expõe;
   recomenda-se expô-la no GVL para maior precisão.
+
+---
+
+# ADR-012 — Manutenção preventiva baseada em uso e ERP simulado
+
+**Status:** Aceita
+
+**Contexto:**
+
+O MVP precisa demonstrar manutenção sem depender de sensores de vibração,
+temperatura ou de um ERP real. A plataforma é somente de monitoramento
+(ADR-002) e não deve enviar comandos ao PLC.
+
+**Decisão:**
+
+Modelar manutenção preventiva a partir dos contadores de produção já ingeridos.
+
+- Cada componente virtual declara `source` (`filled`, `capped` ou `total`),
+  `mtbfCycles` e peças de reposição em `backend/node-api/config/maintenance.json`.
+- O uso é acumulado em `component_usage`; ao atingir `warnRatio` (padrão 80%) o
+  componente entra em `warning`, e em 100% em `critical`.
+- A ingestão gera alerta (`maintenance.<componente>`) e garante uma única OS
+  ativa por componente, com status `planned` (warning) ou `open` (critical).
+- A OS reserva peças em `maintenance_order_parts` e publica o evento
+  `maintenance_order.created` em `erp_outbox`, simulando a integração com ERP.
+- Concluir a OS (`POST /api/maintenance/orders/:id/complete`) reseta o contador
+  do componente e resolve o alerta correspondente.
+- Os ciclos iniciais da configuração são calibrados para a demonstração; em
+  produção devem iniciar em zero.
+
+**Consequências:**
+
+- Nenhum hardware ou ERP adicional é necessário para a demo.
+- A regra é determinística e testável com os contadores existentes.
+- A troca da outbox simulada por um ERP real fica isolada em
+  `erp_outbox`/webhook.
+- A manutenção é preventiva (baseada em uso), não preditiva.

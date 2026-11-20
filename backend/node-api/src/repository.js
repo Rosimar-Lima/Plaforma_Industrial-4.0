@@ -6,9 +6,19 @@ const {
   evaluateFillAlert,
   buildStoppedAlert,
 } = require('./alerts');
+const {
+  counterValue,
+  componentStatus,
+  maintenanceAlert,
+  componentView,
+} = require('./maintenance');
 
-function createRepository(pool, { alertSettings } = {}) {
+function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
   const settings = normalizeSettings(alertSettings);
+  const maintenance =
+    maintenanceConfig && Array.isArray(maintenanceConfig.components)
+      ? maintenanceConfig
+      : null;
 
   async function lastRunningAt(client, machineId, timestamp) {
     const result = await client.query(
@@ -95,6 +105,217 @@ function createRepository(pool, { alertSettings } = {}) {
     return events;
   }
 
+  async function upsertComponentUsage(client, machineId, component, counter, timestamp) {
+    const result = await client.query(
+      `INSERT INTO component_usage (machine_id, component_code, cycles, last_counter, updated_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (machine_id, component_code) DO UPDATE
+         SET cycles = component_usage.cycles
+               + GREATEST(0, EXCLUDED.last_counter - component_usage.last_counter),
+             last_counter = EXCLUDED.last_counter,
+             updated_at = EXCLUDED.updated_at
+       RETURNING cycles`,
+      [machineId, component.code, component.initialCycles, counter, timestamp]
+    );
+
+    return Number(result.rows[0]?.cycles ?? component.initialCycles);
+  }
+
+  async function syncMaintenanceAlert(client, machineId, component, cycles, timestamp) {
+    const condition = maintenanceAlert(component, cycles);
+    if (!condition) return null;
+
+    const existing = await client.query(
+      `SELECT id
+       FROM alerts
+       WHERE machine_id = $1 AND sensor_code = $2 AND resolved_at IS NULL
+       FOR UPDATE`,
+      [machineId, condition.sensorCode]
+    );
+
+    if (existing.rows[0]) {
+      const updated = await client.query(
+        `UPDATE alerts
+         SET message = $2, severity = $3
+         WHERE id = $1
+           AND (severity IS DISTINCT FROM $3 OR message IS DISTINCT FROM $2)
+         RETURNING id, machine_id, sensor_code, message, severity, created_at, resolved_at`,
+        [existing.rows[0].id, condition.message, condition.severity]
+      );
+
+      return updated.rows[0] ? { action: 'updated', alert: updated.rows[0] } : null;
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO alerts (machine_id, sensor_code, message, severity, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, machine_id, sensor_code, message, severity, created_at, resolved_at`,
+      [machineId, condition.sensorCode, condition.message, condition.severity, timestamp]
+    );
+
+    return { action: 'created', alert: inserted.rows[0] };
+  }
+
+  async function insertErpOutbox(client, order, component, eventType) {
+    const parts = await client.query(
+      `SELECT part_code, part_name, quantity
+       FROM maintenance_order_parts
+       WHERE order_id = $1
+       ORDER BY id`,
+      [order.id]
+    );
+
+    const externalId = `ERP-${order.id}-${Date.now().toString(36).toUpperCase()}`;
+    const payload = {
+      event: eventType,
+      erpOrderId: externalId,
+      machineId: order.machine_id,
+      order: {
+        id: order.id,
+        componentCode: order.component_code,
+        status: order.status,
+        priority: order.priority,
+        sourceCycles: order.source_cycles,
+        dueAt: order.due_at,
+      },
+      component: {
+        code: component.code,
+        name: component.name,
+        mtbfCycles: component.mtbfCycles,
+      },
+      parts: parts.rows.map((part) => ({
+        code: part.part_code,
+        name: part.part_name,
+        quantity: part.quantity,
+      })),
+    };
+
+    await client.query(
+      `INSERT INTO erp_outbox (order_id, event_type, payload, status, external_id, sent_at)
+       VALUES ($1, $2, $3::jsonb, 'sent', $4, now())`,
+      [order.id, eventType, JSON.stringify(payload), externalId]
+    );
+
+    return externalId;
+  }
+
+  async function ensureMaintenanceOrder(client, machineId, component, cycles, status, timestamp) {
+    if (status === 'ok') return null;
+
+    const existing = await client.query(
+      `SELECT id, status, priority, source_cycles, due_at
+       FROM maintenance_orders
+       WHERE machine_id = $1
+         AND component_code = $2
+         AND status IN ('planned', 'open', 'in_progress')
+       ORDER BY id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [machineId, component.code]
+    );
+
+    const desiredStatus = status === 'critical' ? 'open' : 'planned';
+    const desiredPriority = status === 'critical' ? 'critical' : 'high';
+
+    if (existing.rows[0]) {
+      const current = existing.rows[0];
+
+      if (status !== 'critical' || current.status === 'in_progress') return null;
+      if (current.status === 'open' && current.priority === 'critical') return null;
+
+      const updated = await client.query(
+        `UPDATE maintenance_orders
+         SET status = $2,
+             priority = $3,
+             source_cycles = GREATEST(source_cycles, $4),
+             due_at = LEAST(due_at, $5::timestamptz + interval '1 day'),
+             updated_at = $5
+         WHERE id = $1
+         RETURNING id, machine_id, component_code, status, priority, source_cycles, due_at,
+                   created_at, updated_at, completed_at`,
+        [current.id, desiredStatus, desiredPriority, cycles, timestamp]
+      );
+
+      await insertErpOutbox(client, updated.rows[0], component, 'maintenance_order.escalated');
+
+      return { action: 'escalated', order: updated.rows[0] };
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO maintenance_orders
+         (machine_id, component_code, status, priority, source_cycles, due_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6::timestamptz + interval '7 days', $6, $6)
+       RETURNING id, machine_id, component_code, status, priority, source_cycles, due_at,
+                 created_at, updated_at, completed_at`,
+      [machineId, component.code, desiredStatus, desiredPriority, cycles, timestamp]
+    );
+    const order = inserted.rows[0];
+
+    const parts = [];
+    for (const part of component.parts) {
+      const partResult = await client.query(
+        `INSERT INTO maintenance_order_parts (order_id, part_code, part_name, quantity)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, part_code, part_name, quantity, status`,
+        [order.id, part.code, part.name, part.quantity]
+      );
+      parts.push(partResult.rows[0]);
+    }
+
+    await insertErpOutbox(client, order, component, 'maintenance_order.created');
+
+    return { action: 'created', order, parts };
+  }
+
+  async function syncMaintenance(client, machineId, record) {
+    const result = { alerts: [], orders: [] };
+    if (!maintenance) return result;
+
+    await client.query('SAVEPOINT maintenance_sync');
+
+    try {
+      for (const component of maintenance.components) {
+        const counter = counterValue(record.production, component.source);
+        const cycles = await upsertComponentUsage(
+          client,
+          machineId,
+          component,
+          counter,
+          record.timestamp
+        );
+        const status = componentStatus(cycles, component, maintenance.warnRatio);
+
+        if (status === 'ok') continue;
+
+        const alertEvent = await syncMaintenanceAlert(
+          client,
+          machineId,
+          component,
+          cycles,
+          record.timestamp
+        );
+        if (alertEvent) result.alerts.push(alertEvent);
+
+        const orderEvent = await ensureMaintenanceOrder(
+          client,
+          machineId,
+          component,
+          cycles,
+          status,
+          record.timestamp
+        );
+        if (orderEvent) result.orders.push(orderEvent);
+      }
+
+      await client.query('RELEASE SAVEPOINT maintenance_sync');
+    } catch (error) {
+      await client.query('ROLLBACK TO SAVEPOINT maintenance_sync').catch(() => {});
+      console.error('Falha ao avaliar manutenção preventiva:', error);
+    }
+
+    return result;
+  }
+
   return {
     async ingestTelemetry(record) {
       const client = await pool.connect();
@@ -124,10 +345,16 @@ function createRepository(pool, { alertSettings } = {}) {
         );
 
         const alerts = await syncAlerts(client, machineId, record);
+        const maintenanceEvents = await syncMaintenance(client, machineId, record);
 
         await client.query('COMMIT');
 
-        return { machineId, recordedAt: record.timestamp, alerts };
+        return {
+          machineId,
+          recordedAt: record.timestamp,
+          alerts: [...alerts, ...maintenanceEvents.alerts],
+          maintenance: maintenanceEvents.orders,
+        };
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         throw error;
@@ -230,6 +457,198 @@ function createRepository(pool, { alertSettings } = {}) {
       );
 
       return result.rows[0] ?? null;
+    },
+
+    async getMaintenanceOverview(machineId) {
+      if (!maintenance) {
+        return { machineId, warnRatio: 0, components: [], orders: [] };
+      }
+
+      const [usageResult, ordersResult] = await Promise.all([
+        pool.query(
+          `SELECT component_code, cycles
+           FROM component_usage
+           WHERE machine_id = $1`,
+          [machineId]
+        ),
+        pool.query(
+          `SELECT id, machine_id, component_code, status, priority, source_cycles,
+                  due_at, created_at, updated_at, completed_at
+           FROM maintenance_orders
+           WHERE machine_id = $1
+             AND status IN ('planned', 'open', 'in_progress')
+           ORDER BY created_at DESC, id DESC`,
+          [machineId]
+        ),
+      ]);
+
+      const usage = new Map(
+        usageResult.rows.map((row) => [row.component_code, Number(row.cycles)])
+      );
+      const orders = ordersResult.rows;
+
+      if (orders.length > 0) {
+        const orderIds = orders.map((order) => order.id);
+        const [partsResult, outboxResult] = await Promise.all([
+          pool.query(
+            `SELECT order_id, part_code, part_name, quantity, status
+             FROM maintenance_order_parts
+             WHERE order_id = ANY($1::bigint[])
+             ORDER BY id`,
+            [orderIds]
+          ),
+          pool.query(
+            `SELECT DISTINCT ON (order_id)
+                    order_id, event_type, status, external_id, sent_at, created_at
+             FROM erp_outbox
+             WHERE order_id = ANY($1::bigint[])
+             ORDER BY order_id, id DESC`,
+            [orderIds]
+          ),
+        ]);
+
+        const partsByOrder = new Map();
+        for (const part of partsResult.rows) {
+          const key = String(part.order_id);
+          if (!partsByOrder.has(key)) partsByOrder.set(key, []);
+          partsByOrder.get(key).push({
+            code: part.part_code,
+            name: part.part_name,
+            quantity: part.quantity,
+            status: part.status,
+          });
+        }
+
+        const erpByOrder = new Map(
+          outboxResult.rows.map((row) => [
+            String(row.order_id),
+            {
+              event: row.event_type,
+              status: row.status,
+              external_id: row.external_id,
+              sent_at: row.sent_at,
+            },
+          ])
+        );
+
+        for (const order of orders) {
+          const key = String(order.id);
+          order.parts = partsByOrder.get(key) ?? [];
+          order.erp = erpByOrder.get(key) ?? null;
+        }
+      }
+
+      const ordersByComponent = new Map(
+        orders.map((order) => [order.component_code, order])
+      );
+
+      const components = maintenance.components.map((component) => {
+        const cycles = usage.get(component.code) ?? component.initialCycles;
+        const view = componentView(component, cycles, maintenance.warnRatio);
+        const order = ordersByComponent.get(component.code);
+
+        return {
+          ...view,
+          order: order
+            ? {
+                id: order.id,
+                status: order.status,
+                priority: order.priority,
+                due_at: order.due_at,
+                parts: order.parts ?? [],
+                erp: order.erp ?? null,
+              }
+            : null,
+        };
+      });
+
+      return {
+        machineId,
+        warnRatio: maintenance.warnRatio,
+        components,
+        orders,
+      };
+    },
+
+    async completeMaintenanceOrder(orderId) {
+      const client = await pool.connect();
+
+      try {
+        await client.query('BEGIN');
+
+        const result = await client.query(
+          `SELECT id, machine_id, component_code, status, priority, source_cycles,
+                  due_at, created_at, updated_at, completed_at
+           FROM maintenance_orders
+           WHERE id = $1
+           FOR UPDATE`,
+          [orderId]
+        );
+        const order = result.rows[0];
+
+        if (!order) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        if (order.status === 'completed') {
+          await client.query('COMMIT');
+          return order;
+        }
+
+        const updated = await client.query(
+          `UPDATE maintenance_orders
+           SET status = 'completed', completed_at = now(), updated_at = now()
+           WHERE id = $1
+           RETURNING id, machine_id, component_code, status, priority, source_cycles,
+                     due_at, created_at, updated_at, completed_at`,
+          [orderId]
+        );
+
+        await client.query(
+          `UPDATE maintenance_order_parts
+           SET status = 'consumed'
+           WHERE order_id = $1`,
+          [orderId]
+        );
+
+        await client.query(
+          `UPDATE component_usage
+           SET cycles = 0, updated_at = now()
+           WHERE machine_id = $1 AND component_code = $2`,
+          [order.machine_id, order.component_code]
+        );
+
+        await client.query(
+          `UPDATE alerts
+           SET resolved_at = now()
+           WHERE machine_id = $1
+             AND sensor_code = $2
+             AND resolved_at IS NULL`,
+          [order.machine_id, `maintenance.${order.component_code}`.slice(0, 50)]
+        );
+
+        await client.query('COMMIT');
+
+        return updated.rows[0];
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+
+    async listErpOutbox({ limit = 20 } = {}) {
+      const result = await pool.query(
+        `SELECT id, order_id, event_type, status, external_id, payload, created_at, sent_at
+         FROM erp_outbox
+         ORDER BY id DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      return result.rows;
     },
   };
 }

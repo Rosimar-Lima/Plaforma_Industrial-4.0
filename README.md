@@ -52,6 +52,15 @@ configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além 
 `ALERT_STOPPED_MS`. O dashboard exibe os alertas abertos em tempo real e permite
 resolvê-los; o histórico fica em `GET /api/machines/:id/alerts?status=all`.
 
+A manutenção preventiva é baseada no uso: cada componente virtual acumula
+ciclos de envase, tampagem ou total e entra em `warning` ao atingir 80% da vida
+útil, gerando uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS
+reserva peças e é publicada em uma outbox de ERP simulada. O dashboard mostra os
+componentes, as OS ativas e permite concluir a manutenção (resetando o contador).
+Endpoints: `GET /api/machines/:id/maintenance`,
+`POST /api/maintenance/orders/:id/complete` e
+`GET /api/integrations/erp/outbox`.
+
 Para usar um PLC real, o `gateway/` lê ADS, OPC-UA ou Modbus TCP e publica na
 mesma API. O adaptador `simulator` permite testar o gateway sem hardware:
 

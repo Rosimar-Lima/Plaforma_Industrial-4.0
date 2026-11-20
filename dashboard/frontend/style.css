@@ -139,26 +139,38 @@ button:hover {
   padding: 22px 28px;
   grid-template-columns: 2fr 1fr;
   grid-template-areas:
-    "status oee"
-    "chart oee"
-    "alerts alerts";
-  align-items: start;
+    "main oee"
+    "maintenance maintenance";
+  grid-template-rows: minmax(min-content, 1fr) auto;
+  align-items: stretch;
 }
 
-.status-panel {
-  grid-area: status;
-}
-
-.chart-panel {
-  grid-area: chart;
+.stack {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
 }
 
 .oee-panel {
   grid-area: oee;
 }
 
+.maintenance-panel {
+  grid-area: maintenance;
+}
+
 .alerts-panel {
-  grid-area: alerts;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+}
+
+.alerts-panel .empty {
+  margin: auto 0;
 }
 
 .panel {
@@ -188,20 +200,24 @@ button:hover {
   font-size: 12px;
 }
 
-.status-grid {
+.summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
 
-.stat {
+.stat,
+.prod {
   background: rgba(11, 18, 32, 0.6);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px;
+  padding: 16px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .stat-label {
@@ -212,28 +228,13 @@ button:hover {
 }
 
 .stat-value {
-  font-size: 15px;
-}
-
-.production-grid {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.prod {
-  background: rgba(11, 18, 32, 0.6);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  font-size: 22px;
+  line-height: 1.1;
 }
 
 .prod strong {
-  font-size: 26px;
+  font-size: 30px;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 
@@ -329,6 +330,155 @@ button:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.maintenance-card {
+  background: rgba(11, 18, 32, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maintenance-card.warning {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.maintenance-card.critical {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.maintenance-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.maintenance-card strong {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.maintenance-card.warning strong {
+  color: var(--warn);
+}
+
+.maintenance-card.critical strong {
+  color: var(--danger);
+}
+
+.maintenance-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.maintenance-card.warning .maintenance-status {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.maintenance-card.critical .maintenance-status {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.maintenance-card.warning .bar span {
+  background: linear-gradient(90deg, var(--warn), #f97316);
+}
+
+.maintenance-card.critical .bar span {
+  background: linear-gradient(90deg, var(--danger), #b91c1c);
+}
+
+.maintenance-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.maintenance-orders {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.maintenance-orders h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.orders-table th,
+.orders-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.orders-table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.orders-table tbody tr:hover {
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.status-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.status-pill.open {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.status-pill.in_progress {
+  color: #bae6fd;
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.order-action {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
 .alert-list {
   list-style: none;
   margin: 0;
@@ -336,6 +486,9 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .alert-item {
@@ -406,9 +559,21 @@ button:hover {
   .layout {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "status"
+      "main"
       "oee"
-      "chart"
-      "alerts";
+      "maintenance";
+    grid-template-rows: auto;
+  }
+
+  .summary-grid,
+  .maintenance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .summary-grid,
+  .maintenance-grid {
+    grid-template-columns: 1fr;
   }
 }

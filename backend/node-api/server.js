@@ -3,14 +3,19 @@
 const { Pool } = require('pg');
 
 const { loadConfig, loadEnvFiles } = require('./src/config');
+const { loadMaintenanceConfig } = require('./src/maintenance');
 const { createRepository } = require('./src/repository');
 const { createApp } = require('./src/app');
 
 loadEnvFiles();
 
 const config = loadConfig();
+const maintenanceConfig = loadMaintenanceConfig(config.maintenanceConfigPath);
 const pool = new Pool({ connectionString: config.databaseUrl });
-const repository = createRepository(pool, { alertSettings: config.alertSettings });
+const repository = createRepository(pool, {
+  alertSettings: config.alertSettings,
+  maintenanceConfig,
+});
 const app = createApp({
   repository,
   nominalCapacityPerHour: config.nominalCapacityPerHour,
