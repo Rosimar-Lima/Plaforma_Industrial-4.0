@@ -16,6 +16,19 @@ const {
   componentView,
 } = require('./maintenance');
 
+// node-postgres devolve BIGINT como string. A API expõe inteiros (OpenAPI) e o
+// dashboard depende disso para localizar a OS clicada.
+function toApiMaintenanceOrder(row) {
+  if (!row) return null;
+
+  return {
+    ...row,
+    id: Number(row.id),
+    machine_id: Number(row.machine_id),
+    source_usage: Number(row.source_usage) || 0,
+  };
+}
+
 function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
   const settings = normalizeSettings(alertSettings);
   const maintenance =
@@ -379,7 +392,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
       if (order.status === status) {
         await client.query('COMMIT');
-        return order;
+        return toApiMaintenanceOrder(order);
       }
 
       if (!['planned', 'open', 'in_progress'].includes(order.status)) {
@@ -409,7 +422,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       await insertSapOutbox(client, updated.rows[0], component, eventType);
 
       await client.query('COMMIT');
-      return updated.rows[0];
+      return toApiMaintenanceOrder(updated.rows[0]);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       throw error;
@@ -640,7 +653,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       const usage = new Map(
         usageResult.rows.map((row) => [row.component_code, row])
       );
-      const orders = ordersResult.rows;
+      const orders = ordersResult.rows.map(toApiMaintenanceOrder);
 
       const componentConfig = new Map(
         maintenance.components.map((component) => [component.code, component])
@@ -779,7 +792,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
         if (order.status === 'completed') {
           await client.query('COMMIT');
-          return order;
+          return toApiMaintenanceOrder(order);
         }
 
         if (!['planned', 'open', 'in_progress'].includes(order.status)) {
@@ -833,7 +846,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
         await client.query('COMMIT');
 
-        return updated.rows[0];
+        return toApiMaintenanceOrder(updated.rows[0]);
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         throw error;
@@ -858,4 +871,5 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
 module.exports = {
   createRepository,
+  toApiMaintenanceOrder,
 };

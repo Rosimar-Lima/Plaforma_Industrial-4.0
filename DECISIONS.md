@@ -508,6 +508,9 @@ conclusão) e três ações: **Enviar para manutenção**, **Cancelar ordem** e
   contrato de leitura `GET /api/machines/:id/maintenance`.
 - O modal é apenas uma camada de UI; qualquer cliente pode chamar as rotas
   diretamente.
+- IDs de OS são convertidos para inteiro na API (o `pg` devolve `BIGINT` como
+  string) e o dashboard compara IDs como string, para que o clique no número
+  abra o modal mesmo se um cliente receber o ID em texto.
 
 ---
 

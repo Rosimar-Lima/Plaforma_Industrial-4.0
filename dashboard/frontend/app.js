@@ -605,8 +605,9 @@ function renderOrderModal(order) {
 }
 
 function openOrderModal(orderId) {
-  const id = Number(orderId);
-  const order = state.orders.find((item) => item.id === id);
+  // IDs podem chegar como string (BIGINT) ou número; normaliza antes de comparar.
+  const id = String(orderId);
+  const order = state.orders.find((item) => String(item.id) === id);
   if (!order) return;
 
   state.selectedOrderId = id;
@@ -647,7 +648,7 @@ function renderMaintenance(data) {
   state.maintenanceNames = names;
   if (
     state.selectedOrderId !== null &&
-    !orders.some((order) => order.id === state.selectedOrderId)
+    !orders.some((order) => String(order.id) === String(state.selectedOrderId))
   ) {
     closeOrderModal();
   }
