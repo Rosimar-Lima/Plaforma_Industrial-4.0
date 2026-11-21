@@ -23,7 +23,9 @@ Abra `http://localhost:3000` (ou o `PORT` configurado).
 - Estado da linha em tempo (quase) real: operação, etapa, esteira, EV, AT e
   nível de envase.
 - Contadores de envasadas, tampadas e produção total.
-- Gráfico do nível de envase das últimas amostras.
+- Gráfico do volume envasado acumulado ao longo das últimas amostras,
+  considerando garrafa long neck de 300 ml (0,3 L por garrafa). Resets do
+  contador de envasadas são tratados como delta zero.
 - Cartões de OEE, disponibilidade, performance e qualidade com filtro de período
   (15 min, 1 h, 6 h, 24 h).
 - Histórico de produção por hora ou turno, com produzidas, boas, refugo, tempo

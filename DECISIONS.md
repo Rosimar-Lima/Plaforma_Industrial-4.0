@@ -400,3 +400,35 @@ amostras já persistidas:
 - Períodos sem telemetria aparecem como tempo parado; uma queda longa do
   backend pode inflar esse tempo, o que é aceitável no MVP e deve ser
   observado em produção.
+
+---
+
+# ADR-014 — Gráfico de volume envasado no dashboard
+
+**Status:** Aceita
+
+**Contexto:**
+
+O gráfico do dashboard mostrava `line.fillPercent`, o nível instantâneo do
+tanque, que não representa a produção de bebida. O projeto não especificava o
+volume da garrafa; a planta usa long neck de 300 ml.
+
+**Decisão:**
+
+Substituir o gráfico por `volume envasado acumulado`:
+
+- a cada amostra, usar o contador `production.filled` (envasadas);
+- converter para litros com `BOTTLE_VOLUME_ML = 300` no frontend;
+- acumular deltas entre amostras; contadores que diminuem são tratados como
+  reset (delta zero), mesma regra do OEE e do histórico de produção;
+- o eixo Y passa a ser litros, com escala automática, e o cabeçalho exibe o
+  total das últimas amostras.
+
+**Consequências:**
+
+- Nenhuma mudança de payload, schema ou endpoint: o gráfico continua usando a
+  telemetria já recebida via SSE/polling.
+- O volume é uma convenção do dashboard; se a planta mudar o tamanho da garrafa,
+  basta alterar `BOTTLE_VOLUME_ML` (ou torná-lo configurável depois).
+- O valor é o volume acumulado desde a origem do contador, não o volume da
+  janela de tempo selecionada no filtro de período.

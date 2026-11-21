@@ -567,6 +567,8 @@ test('GET / serve o dashboard estático', async () => {
     assert.ok(html.includes('alerts-list'));
     assert.ok(html.includes('maintenance-panel'));
     assert.ok(html.includes('production-panel'));
+    assert.ok(html.includes('chart-summary'));
+    assert.ok(html.includes('Volume envasado'));
   } finally {
     await app.close();
   }

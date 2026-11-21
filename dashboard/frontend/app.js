@@ -6,6 +6,7 @@ const POLL_ALERTS_MS = 15000;
 const POLL_MAINTENANCE_MS = 15000;
 const POLL_PRODUCTION_MS = 15000;
 const TELEMETRY_LIMIT = 120;
+const BOTTLE_VOLUME_ML = 300;
 
 const SEVERITY_LABELS = {
   critical: 'Crítico',
@@ -54,6 +55,7 @@ const el = {
   total: document.getElementById('prod-total'),
   chart: document.getElementById('chart'),
   chartEmpty: document.getElementById('chart-empty'),
+  chartSummary: document.getElementById('chart-summary'),
   oeePeriod: document.getElementById('oee-period'),
   oee: document.getElementById('oee-value'),
   oeeBar: document.getElementById('oee-bar'),
@@ -171,6 +173,46 @@ function renderTelemetry(samples) {
   drawChart(ascending);
 }
 
+function formatLiters(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const formatted = new Intl.NumberFormat('pt-BR', {
+    maximumFractionDigits: 1,
+  }).format(number);
+  return `${formatted} L`;
+}
+
+function niceCeil(value) {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
+function volumePoints(samples) {
+  const points = [];
+  let lastCount = null;
+  let totalBottles = 0;
+
+  for (const sample of samples) {
+    const count = Number(sample.payload?.production?.filled);
+    if (!Number.isFinite(count)) continue;
+
+    if (lastCount === null) totalBottles = count;
+    else if (count >= lastCount) totalBottles += count - lastCount;
+    lastCount = count;
+
+    const at = Date.parse(sample.recorded_at);
+    points.push({
+      at: Number.isNaN(at) ? null : at,
+      liters: (totalBottles * BOTTLE_VOLUME_ML) / 1000,
+    });
+  }
+
+  return points;
+}
+
 function drawChart(samples) {
   const canvas = el.chart;
   const ctx = canvas.getContext('2d');
@@ -184,13 +226,22 @@ function drawChart(samples) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const pad = { left: 44, right: 16, top: 16, bottom: 22 };
+  const points = volumePoints(samples);
+  el.chartEmpty.style.display = points.length > 0 ? 'none' : 'block';
+  el.chartSummary.textContent = points.length
+    ? `últimas ${points.length} amostras · ${formatLiters(points[points.length - 1].liters)}`
+    : '—';
+  if (points.length === 0) return;
+
+  const pad = { left: 58, right: 16, top: 16, bottom: 26 };
   const plotWidth = width - pad.left - pad.right;
   const plotHeight = height - pad.top - pad.bottom;
+  const axisMax = niceCeil(Math.max(...points.map((point) => point.liters)));
 
   ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
   ctx.fillStyle = '#94a3b8';
   ctx.font = '11px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'left';
   ctx.lineWidth = 1;
 
   for (const level of [0, 25, 50, 75, 100]) {
@@ -199,30 +250,23 @@ function drawChart(samples) {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(width - pad.right, y);
     ctx.stroke();
-    ctx.fillText(`${level}%`, 8, y + 4);
+    ctx.fillText(formatLiters((axisMax * level) / 100), 6, y + 4);
   }
 
-  const values = samples.map((sample) => {
-    const value = Number(sample.payload?.line?.fillPercent);
-    return Number.isFinite(value) ? value : 0;
-  });
-
-  el.chartEmpty.style.display = values.length > 0 ? 'none' : 'block';
-  if (values.length === 0) return;
-
   const x = (index) =>
-    pad.left + (values.length === 1 ? plotWidth / 2 : (index / (values.length - 1)) * plotWidth);
+    pad.left +
+    (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
   const y = (value) =>
-    pad.top + (1 - Math.max(0, Math.min(100, value)) / 100) * plotHeight;
+    pad.top + (1 - Math.max(0, Math.min(axisMax, value)) / axisMax) * plotHeight;
 
   ctx.beginPath();
-  values.forEach((value, index) => {
+  points.forEach((point, index) => {
     const px = x(index);
-    const py = y(value);
+    const py = y(point.liters);
     if (index === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
   });
-  ctx.lineTo(x(values.length - 1), pad.top + plotHeight);
+  ctx.lineTo(x(points.length - 1), pad.top + plotHeight);
   ctx.lineTo(x(0), pad.top + plotHeight);
   ctx.closePath();
   const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotHeight);
@@ -232,15 +276,26 @@ function drawChart(samples) {
   ctx.fill();
 
   ctx.beginPath();
-  values.forEach((value, index) => {
+  points.forEach((point, index) => {
     const px = x(index);
-    const py = y(value);
+    const py = y(point.liters);
     if (index === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
   });
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2;
   ctx.stroke();
+
+  const timeLabel = (at) =>
+    at === null
+      ? ''
+      : new Date(at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  ctx.fillStyle = '#94a3b8';
+  ctx.textAlign = 'left';
+  ctx.fillText(timeLabel(points[0].at), pad.left, height - 7);
+  ctx.textAlign = 'right';
+  ctx.fillText(timeLabel(points[points.length - 1].at), width - pad.right, height - 7);
+  ctx.textAlign = 'left';
 }
 
 function renderOee(data) {
