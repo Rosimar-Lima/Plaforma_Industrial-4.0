@@ -5,10 +5,10 @@
 - [x] Criação do repositório
 - [x] Estrutura de diretórios
 - [x] Documentação inicial
-- [ ] Definição de requisitos
-- [ ] Definição dos indicadores industriais
-- [ ] Arquitetura inicial validada
-- [ ] Infraestrutura local (Docker Compose + PostgreSQL)
+- [x] Definição de requisitos
+- [x] Definição dos indicadores industriais
+- [x] Arquitetura inicial validada
+- [x] Infraestrutura local (Docker Compose + PostgreSQL)
 
 ---
 
@@ -94,6 +94,8 @@ Detectar eventos industriais relevantes.
 - [x] Limites operacionais
 - [x] Notificações
 - [x] Histórico de eventos
+- [x] Manutenção preventiva baseada em uso
+- [x] Outbox de integração com ERP (simulada)
 
 Entregável:
 

@@ -6,10 +6,6 @@ A plataforma nasceu como evolução do projeto Linha de Envase desenvolvido no c
 
 O projeto foi concebido para funcionar tanto com equipamentos reais quanto com simuladores, permitindo demonstração, testes e desenvolvimento sem dependência de hardware industrial.
 
-Plataforma para coleta, processamento e visualização de dados industriais
-(telemetria de máquinas, indicadores de produção e alertas), seguindo os
-princípios da Indústria 4.0.
-
 ## Visão geral
 
 | Diretório | Descrição |
@@ -32,6 +28,7 @@ princípios da Indústria 4.0.
 | [DECISIONS.md](DECISIONS.md) | Registro de decisões de arquitetura (ADR). |
 | [docs/source-project.md](docs/source-project.md) | Projeto de origem e mapa de migração. |
 | [docs/openapi.yaml](docs/openapi.yaml) | Contrato da API (OpenAPI 3). |
+| [docs/acceptance-test.md](docs/acceptance-test.md) | Roteiro de aceitação do MVP. |
 | [gateway/README.md](gateway/README.md) | Gateway industrial (ADS, OPC-UA, Modbus TCP). |
 | [docs/](docs/) | Requisitos, indicadores, casos de uso e glossário. |
 
@@ -68,6 +65,24 @@ mesma API. O adaptador `simulator` permite testar o gateway sem hardware:
 cd gateway && npm install
 INDUSTRIAL_PROTOCOL=simulator npm start
 ```
+
+## Testes
+
+```bash
+cd backend/node-api && npm test        # backend
+cd gateway && npm test                 # gateway
+node --test simulator/line-state.test.js
+```
+
+Com o ambiente no ar, o smoke test valida a API de ponta a ponta sem
+dependências:
+
+```bash
+node scripts/smoke-test.js             # ou: node scripts/smoke-test.js http://localhost:3000
+```
+
+O roteiro manual de aceitação está em
+[docs/acceptance-test.md](docs/acceptance-test.md).
 
 ## Licença
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Roteiro de aceitação
+    url: https://github.com/Rosimar-Lima/Plaforma_Industrial-4.0/blob/main/docs/acceptance-test.md
+    about: Consulte os cenários AT-01 a AT-10 antes de abrir uma issue.
+  - name: Documentação da API
+    url: https://github.com/Rosimar-Lima/Plaforma_Industrial-4.0/blob/main/docs/openapi.yaml
+    about: Contrato OpenAPI usado pelo dashboard e pelo gateway.

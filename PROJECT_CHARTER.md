@@ -17,15 +17,17 @@ transforma em informação acionável (OEE, disponibilidade, alertas).
 ### Incluído
 
 - Simulador de PLC que publica telemetria.
+- Gateway industrial (TwinCAT ADS, OPC-UA, Modbus TCP) para leitura de PLC real.
 - API de ingestão e consulta de dados.
 - Persistência em PostgreSQL.
-- Dashboard com indicadores e histórico.
-- Alertas básicos por limite de sensor.
+- Dashboard com indicadores, histórico e tempo real (SSE).
+- Alertas básicos por limite de sensor e por linha parada.
+- Manutenção preventiva baseada em uso, com OS e outbox de ERP simulada.
 - Infraestrutura local via Docker Compose.
 
 ### Excluído (por enquanto)
 
-- Integração direta com PLCs reais (OPC-UA/Modbus).
+- Envio de comandos ao PLC (a plataforma é somente leitura).
 - Autenticação e controle de acesso avançado.
 - Aplicativo móvel.
 - Machine learning preditivo.
@@ -51,3 +53,4 @@ transforma em informação acionável (OEE, disponibilidade, alertas).
 - PostgreSQL como banco principal.
 - Comunicação em JSON sobre HTTP/MQTT.
 - Execução local via Docker.
+- Integração inicial somente leitura; o gateway roda no host/edge junto ao PLC.
