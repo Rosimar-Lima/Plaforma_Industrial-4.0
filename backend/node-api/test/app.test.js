@@ -139,11 +139,25 @@ function createFakeRepository() {
             code: 'fill-valve',
             name: 'Válvula de envase',
             status: 'warning',
+            metric: 'cycles',
+            unit: 'ciclos',
             usageRatio: 0.85,
-            cycles: 340,
-            mtbfCycles: 400,
-            remainingCycles: 60,
+            usage: 340,
+            mtbf: 400,
+            remaining: 60,
             order: { id: 3, status: 'planned', priority: 'high' },
+          },
+          {
+            code: 'conveyor-bearing',
+            name: 'Rolamento da esteira',
+            status: 'warning',
+            metric: 'hours',
+            unit: 'h',
+            usageRatio: 0.8,
+            usage: 160,
+            mtbf: 200,
+            remaining: 40,
+            order: null,
           },
         ],
         orders: [
@@ -153,6 +167,8 @@ function createFakeRepository() {
             component_code: 'fill-valve',
             status: 'planned',
             priority: 'high',
+            source_usage: 340,
+            source_unit: 'ciclos',
             parts: [{ code: 'KIT-VAL-FILL', name: 'Kit', quantity: 1, status: 'reserved' }],
             sap: { external_id: 'SAP-3-X', status: 'sent' },
           },
@@ -605,9 +621,14 @@ test('GET /api/machines/:id/maintenance retorna vida útil e OS abertas', async 
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.machineId, 1);
-    assert.equal(body.components.length, 1);
+    assert.equal(body.components.length, 2);
     assert.equal(body.components[0].status, 'warning');
+    assert.equal(body.components[0].unit, 'ciclos');
+    assert.equal(body.components[1].metric, 'hours');
+    assert.equal(body.components[1].unit, 'h');
+    assert.equal(body.components[1].usage, 160);
     assert.equal(body.orders.length, 1);
+    assert.equal(body.orders[0].source_usage, 340);
     assert.equal(body.orders[0].sap.external_id, 'SAP-3-X');
   } finally {
     await app.close();

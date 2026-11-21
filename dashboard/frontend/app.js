@@ -123,6 +123,13 @@ function formatNumber(value) {
   return new Intl.NumberFormat('pt-BR').format(Number(value) || 0);
 }
 
+function formatMaintenanceUsage(value, unit = 'ciclos') {
+  const number = Number(value) || 0;
+  return unit === 'h'
+    ? `${number.toFixed(1).replace('.', ',')} h`
+    : `${formatNumber(number)} ciclos`;
+}
+
 function formatPercent(ratio) {
   const value = Number(ratio);
   if (!Number.isFinite(value)) return '—';
@@ -575,7 +582,7 @@ function renderOrderModal(order) {
     ['Componente', `${name} (${order.component_code})`],
     ['Status', MAINTENANCE_STATUS_LABELS[order.status] ?? order.status],
     ['Prioridade', PRIORITY_LABELS[order.priority] ?? order.priority],
-    ['Ciclos na origem', formatNumber(order.source_cycles)],
+    ['Uso na origem', formatMaintenanceUsage(order.source_usage, order.source_unit)],
     ['Peças reservadas', partsText],
     ['ID SAP', order.sap?.external_id],
     ['Evento SAP', order.sap?.event],
@@ -681,8 +688,9 @@ function renderMaintenance(data) {
     const meta = document.createElement('p');
     meta.className = 'maintenance-meta';
     meta.textContent =
-      `${formatNumber(component.cycles)} / ${formatNumber(component.mtbfCycles)} ciclos` +
-      ` · restam ${formatNumber(component.remainingCycles)}`;
+      `${formatMaintenanceUsage(component.usage, component.unit)} / ` +
+      `${formatMaintenanceUsage(component.mtbf, component.unit)}` +
+      ` · restam ${formatMaintenanceUsage(component.remaining, component.unit)}`;
 
     card.append(head, value, bar, meta);
     el.maintenanceComponents.append(card);

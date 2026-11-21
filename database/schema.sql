@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS component_usage (
     component_code VARCHAR(50) NOT NULL,
     cycles         BIGINT NOT NULL DEFAULT 0,
     last_counter   BIGINT NOT NULL DEFAULT 0,
+    hours          NUMERIC(14,3) NOT NULL DEFAULT 0,
+    last_timestamp TIMESTAMPTZ,
+    last_active    BOOLEAN NOT NULL DEFAULT false,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (machine_id, component_code)
 );
@@ -71,7 +74,7 @@ CREATE TABLE IF NOT EXISTS maintenance_orders (
     component_code VARCHAR(50) NOT NULL,
     status         VARCHAR(20) NOT NULL DEFAULT 'planned',
     priority       VARCHAR(20) NOT NULL DEFAULT 'high',
-    source_cycles  BIGINT NOT NULL DEFAULT 0,
+    source_usage   NUMERIC(14,3) NOT NULL DEFAULT 0,
     due_at         TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),

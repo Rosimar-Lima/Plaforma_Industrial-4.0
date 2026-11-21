@@ -31,10 +31,12 @@ Abra `http://localhost:3000` (ou o `PORT` configurado).
 - Histórico de produção por hora ou turno, com produzidas, boas, refugo, tempo
   operando, tempo parado e disponibilidade.
 - Painel de alertas abertos, com severidade, horário e ação para resolver.
-- Manutenção preventiva: vida útil dos componentes e OS ativas.
+- Manutenção preventiva: vida útil dos componentes e OS ativas. Válvulas são
+  medida em ciclos de envase/tampagem; rolamento e motor da esteira são medidos
+  em horas com o conveyor ligado (unidade `h` no cartão).
 - Ao clicar no número de uma OS aberta, abre-se um formulário com todos os
-  dados da ordem (número, máquina, componente, status, prioridade, ciclos,
-  peças reservadas, ID/evento do SAP e datas). O formulário oferece os botões
+  dados da ordem (número, máquina, componente, status, prioridade, uso na origem
+  em ciclos ou horas, peças reservadas, ID/evento do SAP e datas). O formulário oferece os botões
   **Enviar para manutenção** (`POST /api/maintenance/orders/:id/send`) e
   **Cancelar ordem** (`POST /api/maintenance/orders/:id/cancel`), além de
   fechar. O envio muda o status para `in_progress` e o cancelamento para

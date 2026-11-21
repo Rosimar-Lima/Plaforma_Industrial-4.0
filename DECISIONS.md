@@ -344,8 +344,9 @@ temperatura ou de um SAP real. A plataforma é somente de monitoramento
 
 Modelar manutenção preventiva a partir dos contadores de produção já ingeridos.
 
-- Cada componente virtual declara `source` (`filled`, `capped` ou `total`),
-  `mtbfCycles` e peças de reposição em `backend/node-api/config/maintenance.json`.
+- Cada componente virtual declara `metric`, `source`, vida útil e peças de
+  reposição em `backend/node-api/config/maintenance.json` (ADR-017 detalha as
+  unidades por tipo de componente).
 - O uso é acumulado em `component_usage`; ao atingir `warnRatio` (padrão 80%) o
   componente entra em `warning`, e em 100% em `critical`.
 - A ingestão gera alerta (`maintenance.<componente>`) e garante uma única OS
@@ -507,3 +508,50 @@ conclusão) e três ações: **Enviar para manutenção**, **Cancelar ordem** e
   contrato de leitura `GET /api/machines/:id/maintenance`.
 - O modal é apenas uma camada de UI; qualquer cliente pode chamar as rotas
   diretamente.
+
+---
+
+# ADR-017 — Desgaste por horas na esteira e por ciclos nas válvulas
+
+**Status:** Aceita
+
+**Contexto:**
+
+O modelo inicial media todos os componentes por contadores de produção
+(`filled`, `capped`, `total`). Isso é razoável para válvulas de envase e
+tampagem, mas não para rolamento e motor da esteira: eles desgastam pelo tempo
+em que o conveyor está acionado, não pela quantidade de garrafas.
+
+**Decisão:**
+
+Diferenciar o critério de uso por componente em
+`backend/node-api/config/maintenance.json`:
+
+- `metric: "cycles"` (padrão, válvulas): uso é o delta do contador de produção,
+  com `mtbfCycles`/`initialCycles`.
+- `metric: "hours"` (rolamento e motor): uso é a soma dos intervalos entre
+  amostras em que `source: "conveyor"` (`line.conveyorOn = true`) estava ativo,
+  com `mtbfHours`/`initialHours`. Também é aceito `source: "running"` para
+  componentes que desgastam com a linha ligada.
+- O intervalo só conta quando a amostra anterior indicava acionamento ligado e
+  é limitado a 1 hora, para não transformar paradas longas em desgaste.
+- `component_usage` ganha `hours`, `last_timestamp` e `last_active`; a coluna
+  `cycles` continua para as válvulas.
+- `maintenance_orders.source_cycles` passa a ser `source_usage` (numérico), com
+  a unidade resolvida pelo componente.
+- A API devolve `metric`, `source`, `usage`, `mtbf`, `remaining` e `unit` em vez
+  dos antigos `cycles`/`mtbfCycles`/`remainingCycles`.
+- O dashboard exibe `ciclos` ou `h` conforme `unit`, inclusive no detalhe da OS.
+
+**Consequências:**
+
+- O limiar de 80%/100% continua igual; muda apenas o que é acumulado.
+- Em instalações novas o schema já traz as colunas. Volumes antigos precisam da
+  migração `database/migrations/002_maintenance_hours.sql`.
+- Clientes que liam `cycles`/`mtbfCycles` devem migrar para `usage`/`mtbf`;
+  não mantivemos alias para evitar ambiguidade de unidade.
+- O uso por horas depende da periodicidade da telemetria. Com amostras a cada
+  1 s, o valor evolui devagar; os valores iniciais da configuração calibram a
+  demonstração (rolamento já em 80%, motor em 60%).
+- O reset ao concluir a OS zera `hours` para componentes de horas e `cycles`
+  para os de ciclos.

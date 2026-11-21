@@ -24,5 +24,13 @@ e payloads antigos:
 psql -h localhost -U postgres -d industrial -f migrations/001_rename_erp_to_sap.sql
 ```
 
-Em instalações novas, `schema.sql` já cria `sap_outbox` e não precisa de
-migração.
+Volumes criados antes do desgaste por horas precisam da migração 002. Ela acrescenta
+`hours`, `last_timestamp` e `last_active` em `component_usage` e renomeia
+`source_cycles` para `source_usage` em `maintenance_orders`:
+
+```bash
+psql -h localhost -U postgres -d industrial -f migrations/002_maintenance_hours.sql
+```
+
+A migração 001 deve ser aplicada antes da 002 em volumes antigos. Em instalações
+novas, `schema.sql` já traz tudo e nenhuma migração é necessária.

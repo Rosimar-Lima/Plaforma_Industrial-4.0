@@ -59,6 +59,21 @@ Cálculo:
 Os contadores são cumulativos: a produção do período é `última - primeira`
 amostra.
 
+## Critérios de desgaste
+
+`backend/node-api/config/maintenance.json` define `metric` por componente:
+
+- `cycles`: uso é o delta do contador de produção (`filled`, `capped` ou
+  `total`), com `mtbfCycles`/`initialCycles`. Usado nas válvulas.
+- `hours`: uso é o tempo entre amostras em que o acionamento estava ligado
+  (`conveyor` usa `line.conveyorOn`; `running` usa `line.running`), com
+  `mtbfHours`/`initialHours`. Usado no rolamento e no motor da esteira.
+  Intervalos maiores que 1 h são limitados para não contar paradas longas.
+
+`GET /api/machines/:id/maintenance` devolve `usage`, `mtbf`, `remaining`, `unit`
+(`ciclos` ou `h`), `metric` e `source` por componente. `maintenance_orders`
+registra `source_usage` com a unidade correspondente.
+
 ## Ordens de manutenção
 
 As OS ativas têm status `planned` (atenção) ou `open` (crítico). O dashboard

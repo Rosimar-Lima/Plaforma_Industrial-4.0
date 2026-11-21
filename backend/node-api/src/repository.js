@@ -9,6 +9,8 @@ const {
 } = require('./alerts');
 const {
   counterValue,
+  usageSignal,
+  hourDelta,
   componentStatus,
   maintenanceAlert,
   componentView,
@@ -106,7 +108,39 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return events;
   }
 
-  async function upsertComponentUsage(client, machineId, component, counter, timestamp) {
+  async function upsertComponentUsage(client, machineId, component, record) {
+    const timestamp = record.timestamp;
+
+    if (component.metric === 'hours') {
+      const previous = await client.query(
+        `SELECT hours, last_timestamp, last_active
+         FROM component_usage
+         WHERE machine_id = $1 AND component_code = $2
+         FOR UPDATE`,
+        [machineId, component.code]
+      );
+
+      const row = previous.rows[0];
+      const active = usageSignal(record.line, component.source);
+      const delta = row ? hourDelta(row, record.timestamp) : 0;
+      const hours = row ? Number(row.hours) + delta : component.initial;
+
+      await client.query(
+        `INSERT INTO component_usage
+           (machine_id, component_code, hours, last_timestamp, last_active, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $4)
+         ON CONFLICT (machine_id, component_code) DO UPDATE
+           SET hours = EXCLUDED.hours,
+               last_timestamp = EXCLUDED.last_timestamp,
+               last_active = EXCLUDED.last_active,
+               updated_at = EXCLUDED.updated_at`,
+        [machineId, component.code, hours, timestamp, active]
+      );
+
+      return hours;
+    }
+
+    const counter = counterValue(record.production, component.source);
     const result = await client.query(
       `INSERT INTO component_usage (machine_id, component_code, cycles, last_counter, updated_at)
        VALUES ($1, $2, $3, $4, $5)
@@ -116,14 +150,14 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
              last_counter = EXCLUDED.last_counter,
              updated_at = EXCLUDED.updated_at
        RETURNING cycles`,
-      [machineId, component.code, component.initialCycles, counter, timestamp]
+      [machineId, component.code, component.initial, counter, timestamp]
     );
 
-    return Number(result.rows[0]?.cycles ?? component.initialCycles);
+    return Number(result.rows[0]?.cycles ?? component.initial);
   }
 
-  async function syncMaintenanceAlert(client, machineId, component, cycles, timestamp) {
-    const condition = maintenanceAlert(component, cycles);
+  async function syncMaintenanceAlert(client, machineId, component, usage, timestamp) {
+    const condition = maintenanceAlert(component, usage);
     if (!condition) return null;
 
     const existing = await client.query(
@@ -176,13 +210,16 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         componentCode: order.component_code,
         status: order.status,
         priority: order.priority,
-        sourceCycles: order.source_cycles,
+        sourceUsage: order.source_usage,
+        sourceUnit: component.unit,
         dueAt: order.due_at,
       },
       component: {
         code: component.code,
         name: component.name,
-        mtbfCycles: component.mtbfCycles,
+        metric: component.metric,
+        mtbf: component.mtbf,
+        unit: component.unit,
       },
       parts: parts.rows.map((part) => ({
         code: part.part_code,
@@ -200,11 +237,11 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return externalId;
   }
 
-  async function ensureMaintenanceOrder(client, machineId, component, cycles, status, timestamp) {
+  async function ensureMaintenanceOrder(client, machineId, component, usage, status, timestamp) {
     if (status === 'ok') return null;
 
     const existing = await client.query(
-      `SELECT id, status, priority, source_cycles, due_at
+      `SELECT id, status, priority, source_usage, due_at
        FROM maintenance_orders
        WHERE machine_id = $1
          AND component_code = $2
@@ -228,13 +265,13 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         `UPDATE maintenance_orders
          SET status = $2,
              priority = $3,
-             source_cycles = GREATEST(source_cycles, $4),
+             source_usage = GREATEST(source_usage, $4),
              due_at = LEAST(due_at, $5::timestamptz + interval '1 day'),
              updated_at = $5
          WHERE id = $1
-         RETURNING id, machine_id, component_code, status, priority, source_cycles, due_at,
+         RETURNING id, machine_id, component_code, status, priority, source_usage, due_at,
                    created_at, updated_at, completed_at`,
-        [current.id, desiredStatus, desiredPriority, cycles, timestamp]
+        [current.id, desiredStatus, desiredPriority, usage, timestamp]
       );
 
       await insertSapOutbox(client, updated.rows[0], component, 'maintenance_order.escalated');
@@ -244,11 +281,11 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
     const inserted = await client.query(
       `INSERT INTO maintenance_orders
-         (machine_id, component_code, status, priority, source_cycles, due_at, created_at, updated_at)
+         (machine_id, component_code, status, priority, source_usage, due_at, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6::timestamptz + interval '7 days', $6, $6)
-       RETURNING id, machine_id, component_code, status, priority, source_cycles, due_at,
+       RETURNING id, machine_id, component_code, status, priority, source_usage, due_at,
                  created_at, updated_at, completed_at`,
-      [machineId, component.code, desiredStatus, desiredPriority, cycles, timestamp]
+      [machineId, component.code, desiredStatus, desiredPriority, usage, timestamp]
     );
     const order = inserted.rows[0];
 
@@ -276,15 +313,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
     try {
       for (const component of maintenance.components) {
-        const counter = counterValue(record.production, component.source);
-        const cycles = await upsertComponentUsage(
-          client,
-          machineId,
-          component,
-          counter,
-          record.timestamp
-        );
-        const status = componentStatus(cycles, component, maintenance.warnRatio);
+        const usage = await upsertComponentUsage(client, machineId, component, record);
+        const status = componentStatus(usage, component, maintenance.warnRatio);
 
         if (status === 'ok') continue;
 
@@ -292,7 +322,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           client,
           machineId,
           component,
-          cycles,
+          usage,
           record.timestamp
         );
         if (alertEvent) result.alerts.push(alertEvent);
@@ -301,7 +331,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           client,
           machineId,
           component,
-          cycles,
+          usage,
           status,
           record.timestamp
         );
@@ -324,7 +354,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       await client.query('BEGIN');
 
       const result = await client.query(
-        `SELECT id, machine_id, component_code, status, priority, source_cycles,
+        `SELECT id, machine_id, component_code, status, priority, source_usage,
                 due_at, created_at, updated_at, completed_at
          FROM maintenance_orders
          WHERE id = $1
@@ -352,7 +382,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         `UPDATE maintenance_orders
          SET status = $2, updated_at = now(), completed_at = NULL
          WHERE id = $1
-         RETURNING id, machine_id, component_code, status, priority, source_cycles,
+         RETURNING id, machine_id, component_code, status, priority, source_usage,
                    due_at, created_at, updated_at, completed_at`,
         [orderId, status]
       );
@@ -362,7 +392,9 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       ) ?? {
         code: order.component_code,
         name: order.component_code,
-        mtbfCycles: 0,
+        metric: 'cycles',
+        mtbf: 0,
+        unit: 'ciclos',
         parts: [],
       };
       await insertSapOutbox(client, updated.rows[0], component, eventType);
@@ -580,13 +612,13 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
       const [usageResult, ordersResult] = await Promise.all([
         pool.query(
-          `SELECT component_code, cycles
+          `SELECT component_code, cycles, hours
            FROM component_usage
            WHERE machine_id = $1`,
           [machineId]
         ),
         pool.query(
-          `SELECT id, machine_id, component_code, status, priority, source_cycles,
+          `SELECT id, machine_id, component_code, status, priority, source_usage,
                   due_at, created_at, updated_at, completed_at
            FROM maintenance_orders
            WHERE machine_id = $1
@@ -597,9 +629,13 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       ]);
 
       const usage = new Map(
-        usageResult.rows.map((row) => [row.component_code, Number(row.cycles)])
+        usageResult.rows.map((row) => [row.component_code, row])
       );
       const orders = ordersResult.rows;
+
+      const componentConfig = new Map(
+        maintenance.components.map((component) => [component.code, component])
+      );
 
       if (orders.length > 0) {
         const orderIds = orders.map((order) => order.id);
@@ -652,13 +688,22 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         }
       }
 
+      for (const order of orders) {
+        order.source_usage = Number(order.source_usage) || 0;
+        order.source_unit = componentConfig.get(order.component_code)?.unit ?? 'ciclos';
+      }
+
       const ordersByComponent = new Map(
         orders.map((order) => [order.component_code, order])
       );
 
       const components = maintenance.components.map((component) => {
-        const cycles = usage.get(component.code) ?? component.initialCycles;
-        const view = componentView(component, cycles, maintenance.warnRatio);
+        const row = usage.get(component.code);
+        const current =
+          component.metric === 'hours'
+            ? Number(row?.hours ?? component.initial)
+            : Number(row?.cycles ?? component.initial);
+        const view = componentView(component, current, maintenance.warnRatio);
         const order = ordersByComponent.get(component.code);
 
         return {
@@ -668,6 +713,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
                 id: order.id,
                 status: order.status,
                 priority: order.priority,
+                source_usage: Number(order.source_usage) || 0,
+                source_unit: componentConfig.get(order.component_code)?.unit ?? component.unit,
                 due_at: order.due_at,
                 parts: order.parts ?? [],
                 sap: order.sap ?? null,
@@ -707,7 +754,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         await client.query('BEGIN');
 
         const result = await client.query(
-          `SELECT id, machine_id, component_code, status, priority, source_cycles,
+          `SELECT id, machine_id, component_code, status, priority, source_usage,
                   due_at, created_at, updated_at, completed_at
            FROM maintenance_orders
            WHERE id = $1
@@ -735,7 +782,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           `UPDATE maintenance_orders
            SET status = 'completed', completed_at = now(), updated_at = now()
            WHERE id = $1
-           RETURNING id, machine_id, component_code, status, priority, source_cycles,
+           RETURNING id, machine_id, component_code, status, priority, source_usage,
                      due_at, created_at, updated_at, completed_at`,
           [orderId]
         );
@@ -747,12 +794,24 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           [orderId]
         );
 
-        await client.query(
-          `UPDATE component_usage
-           SET cycles = 0, updated_at = now()
-           WHERE machine_id = $1 AND component_code = $2`,
-          [order.machine_id, order.component_code]
+        const component = maintenance?.components?.find(
+          (item) => item.code === order.component_code
         );
+        if (component?.metric === 'hours') {
+          await client.query(
+            `UPDATE component_usage
+             SET hours = 0, updated_at = now()
+             WHERE machine_id = $1 AND component_code = $2`,
+            [order.machine_id, order.component_code]
+          );
+        } else {
+          await client.query(
+            `UPDATE component_usage
+             SET cycles = 0, updated_at = now()
+             WHERE machine_id = $1 AND component_code = $2`,
+            [order.machine_id, order.component_code]
+          );
+        }
 
         await client.query(
           `UPDATE alerts

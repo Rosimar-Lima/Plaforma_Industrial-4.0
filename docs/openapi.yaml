@@ -820,9 +820,12 @@ components:
         priority:
           type: string
           enum: [high, critical]
-        source_cycles:
+        source_usage:
+          type: number
+          description: Uso do componente no momento da abertura da OS (ciclos ou horas)
+        source_unit:
           type: string
-          description: Ciclos do componente no momento da abertura da OS
+          enum: [ciclos, h]
         due_at:
           type: string
           format: date-time
@@ -869,19 +872,28 @@ components:
         kind:
           type: string
           example: valve
+        metric:
+          type: string
+          enum: [cycles, hours]
+          description: ciclos de produção ou horas de operação da esteira
         source:
           type: string
-          enum: [filled, capped, total]
-        cycles:
-          type: integer
-        mtbfCycles:
-          type: integer
+          enum: [filled, capped, total, conveyor, running]
+        unit:
+          type: string
+          enum: [ciclos, h]
+        usage:
+          type: number
+          description: uso acumulado (ciclos ou horas)
+        mtbf:
+          type: number
+          description: vida útil definida na configuração
         usageRatio:
           type: number
           minimum: 0
           maximum: 1
-        remainingCycles:
-          type: integer
+        remaining:
+          type: number
         status:
           type: string
           enum: [ok, warning, critical]

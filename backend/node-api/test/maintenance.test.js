@@ -6,19 +6,36 @@ const assert = require('node:assert/strict');
 const {
   normalizeConfig,
   counterValue,
+  usageSignal,
+  hourDelta,
+  formatUsage,
   usageRatio,
   componentStatus,
   maintenanceAlert,
   componentView,
 } = require('../src/maintenance');
 
-const component = {
+const valve = {
   code: 'fill-valve',
   name: 'Válvula de envase',
   kind: 'valve',
+  metric: 'cycles',
   source: 'filled',
-  mtbfCycles: 400,
-  initialCycles: 0,
+  unit: 'ciclos',
+  mtbf: 400,
+  initial: 0,
+  parts: [],
+};
+
+const bearing = {
+  code: 'conveyor-bearing',
+  name: 'Rolamento da esteira',
+  kind: 'bearing',
+  metric: 'hours',
+  source: 'conveyor',
+  unit: 'h',
+  mtbf: 200,
+  initial: 160,
   parts: [],
 };
 
@@ -26,7 +43,7 @@ test('normaliza configuração e descarta componentes inválidos', () => {
   const config = normalizeConfig({
     warnRatio: 0.7,
     components: [
-      component,
+      { code: 'fill-valve', name: 'Válvula', metric: 'cycles', source: 'filled', mtbfCycles: 400 },
       { code: 'sem-mtbf', name: 'Inválido', mtbfCycles: 0 },
       { name: 'Sem código', mtbfCycles: 10 },
     ],
@@ -35,6 +52,8 @@ test('normaliza configuração e descarta componentes inválidos', () => {
   assert.equal(config.warnRatio, 0.7);
   assert.equal(config.components.length, 1);
   assert.equal(config.components[0].code, 'fill-valve');
+  assert.equal(config.components[0].metric, 'cycles');
+  assert.equal(config.components[0].unit, 'ciclos');
   assert.equal(config.components[0].parts.length, 0);
 });
 
@@ -42,6 +61,38 @@ test('limita warnRatio e usa padrão quando inválido', () => {
   assert.equal(normalizeConfig({ warnRatio: 2 }).warnRatio, 0.99);
   assert.equal(normalizeConfig({ warnRatio: 0 }).warnRatio, 0.1);
   assert.equal(normalizeConfig({}).warnRatio, 0.8);
+});
+
+test('normaliza componente de horas com origem da esteira', () => {
+  const config = normalizeConfig({
+    components: [
+      {
+        code: 'conveyor-bearing',
+        name: 'Rolamento',
+        metric: 'hours',
+        source: 'conveyor',
+        mtbfHours: 200,
+        initialHours: 160,
+      },
+    ],
+  });
+
+  assert.equal(config.components[0].metric, 'hours');
+  assert.equal(config.components[0].source, 'conveyor');
+  assert.equal(config.components[0].unit, 'h');
+  assert.equal(config.components[0].mtbf, 200);
+  assert.equal(config.components[0].initial, 160);
+});
+
+test('componente de horas ignora campos de ciclos e vice-versa', () => {
+  const config = normalizeConfig({
+    components: [
+      { code: 'a', name: 'A', metric: 'hours', mtbfCycles: 10, initialCycles: 5 },
+      { code: 'b', name: 'B', mtbfHours: 10, initialHours: 5 },
+    ],
+  });
+
+  assert.equal(config.components.length, 0);
 });
 
 test('lê o contador conforme a fonte do componente', () => {
@@ -54,41 +105,99 @@ test('lê o contador conforme a fonte do componente', () => {
   assert.equal(counterValue(undefined, 'filled'), 0);
 });
 
+test('sinal de uso por horas vem da esteira ou da linha', () => {
+  const line = { conveyorOn: true, running: false };
+
+  assert.equal(usageSignal(line, 'conveyor'), true);
+  assert.equal(usageSignal(line, 'running'), false);
+  assert.equal(usageSignal(line, 'outra'), false);
+  assert.equal(usageSignal(undefined, 'conveyor'), false);
+});
+
+test('acumula horas somente se a amostra anterior estava acionada', () => {
+  const timestamp = '2026-01-01T01:00:00.000Z';
+  const previous = {
+    lastActive: true,
+    lastTimestamp: '2026-01-01T00:30:00.000Z',
+  };
+
+  assert.equal(hourDelta(previous, timestamp), 0.5);
+  assert.equal(hourDelta({ ...previous, lastActive: false }, timestamp), 0);
+  assert.equal(hourDelta({ ...previous, lastTimestamp: timestamp }, timestamp), 0);
+  assert.equal(hourDelta({ ...previous, lastTimestamp: 'invalida' }, timestamp), 0);
+});
+
+test('limita a 1 hora o intervalo entre amostras', () => {
+  const delta = hourDelta(
+    { lastActive: true, lastTimestamp: '2026-01-01T00:00:00.000Z' },
+    '2026-01-05T00:00:00.000Z'
+  );
+
+  assert.equal(delta, 1);
+});
+
+test('formata uso conforme a unidade do componente', () => {
+  assert.equal(formatUsage(340, valve), '340 ciclos');
+  assert.equal(formatUsage(160.25, bearing), '160,3 h');
+  assert.equal(formatUsage(200, bearing), '200,0 h');
+});
+
 test('classifica vida útil em ok, atenção e crítico', () => {
-  assert.equal(componentStatus(100, component), 'ok');
-  assert.equal(componentStatus(319, component), 'ok');
-  assert.equal(componentStatus(320, component), 'warning');
-  assert.equal(componentStatus(399, component), 'warning');
-  assert.equal(componentStatus(400, component), 'critical');
-  assert.equal(componentStatus(500, component), 'critical');
+  assert.equal(componentStatus(100, valve), 'ok');
+  assert.equal(componentStatus(319, valve), 'ok');
+  assert.equal(componentStatus(320, valve), 'warning');
+  assert.equal(componentStatus(399, valve), 'warning');
+  assert.equal(componentStatus(400, valve), 'critical');
+  assert.equal(componentStatus(500, valve), 'critical');
 });
 
 test('gera alerta de vida útil apenas a partir da atenção', () => {
-  assert.equal(maintenanceAlert(component, 100), null);
+  assert.equal(maintenanceAlert(valve, 100), null);
 
-  const warning = maintenanceAlert(component, 340);
+  const warning = maintenanceAlert(valve, 340);
   assert.equal(warning.sensorCode, 'maintenance.fill-valve');
   assert.equal(warning.severity, 'warning');
   assert.match(warning.message, /85%/);
+  assert.match(warning.message, /340 ciclos\/400 ciclos/);
 
-  const critical = maintenanceAlert(component, 400);
+  const critical = maintenanceAlert(valve, 400);
   assert.equal(critical.severity, 'critical');
   assert.match(critical.message, /esgotada/);
 });
 
-test('monta visão do componente com razão e ciclos restantes', () => {
-  const view = componentView(component, 350);
+test('alerta de componente de horas usa horas na mensagem', () => {
+  const warning = maintenanceAlert(bearing, 170);
+
+  assert.equal(warning.severity, 'warning');
+  assert.match(warning.message, /170,0 h\/200,0 h/);
+  assert.doesNotMatch(warning.message, /ciclos/);
+});
+
+test('monta visão do componente com razão e uso restante', () => {
+  const view = componentView(valve, 350);
 
   assert.equal(view.usageRatio, 0.875);
-  assert.equal(view.remainingCycles, 50);
+  assert.equal(view.remaining, 50);
+  assert.equal(view.unit, 'ciclos');
+  assert.equal(view.metric, 'cycles');
   assert.equal(view.status, 'warning');
-  assert.equal(usageRatio(350, component), 0.875);
+  assert.equal(usageRatio(350, valve), 0.875);
+});
+
+test('monta visão de horas com unidade correta', () => {
+  const view = componentView(bearing, 170);
+
+  assert.equal(view.usageRatio, 0.85);
+  assert.equal(view.remaining, 30);
+  assert.equal(view.unit, 'h');
+  assert.equal(view.metric, 'hours');
+  assert.equal(view.status, 'warning');
 });
 
 test('limita a razão exibida a 100%', () => {
-  const view = componentView(component, 500);
+  const view = componentView(valve, 500);
 
   assert.equal(view.usageRatio, 1);
-  assert.equal(view.remainingCycles, 0);
+  assert.equal(view.remaining, 0);
   assert.equal(view.status, 'critical');
 });

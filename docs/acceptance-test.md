@@ -164,15 +164,18 @@ Restaurare `ALERT_STOPPED_MS=60000` ao final.
 2. Verifique a vida útil dos componentes (`conveyor-bearing`, `conveyor-motor`,
    `fill-valve`, `cap-valve`).
 
-**Esperado:** componentes com percentual de uso, ciclos restantes e status
-`ok`/`warning`/`critical`. Componentes acima de 80% têm OS `planned`; em 100% a
-OS fica `open`. A OS mostra peças reservadas e o evento enviado ao SAP simulado.
+**Esperado:** componentes com percentual de uso, uso restante e status
+`ok`/`warning`/`critical`. `fill-valve` e `cap-valve` mostram uso em **ciclos**;
+`conveyor-bearing` e `conveyor-motor` mostram uso em **horas** (`h`) acumuladas
+com o conveyor ligado. Componentes acima de 80% têm OS `planned`; em 100% a OS
+fica `open`. A OS mostra peças reservadas e o evento enviado ao SAP simulado.
 
 3. Clique no número de uma OS ativa (ex.: `#3`).
 
 **Esperado:** abre um formulário com número, máquina, componente, status,
-prioridade, ciclos na origem, peças reservadas, ID/evento/envio SAP e datas da
-ordem, com os botões **Enviar para manutenção**, **Cancelar ordem** e **Fechar**.
+prioridade, uso na origem (em ciclos ou horas, conforme o componente), peças
+reservadas, ID/evento/envio SAP e datas da ordem, com os botões **Enviar para
+manutenção**, **Cancelar ordem** e **Fechar**.
 
 4. Clique em **Enviar para manutenção**.
 

@@ -5,9 +5,10 @@
       "code": "conveyor-bearing",
       "name": "Rolamento da esteira",
       "kind": "bearing",
-      "source": "total",
-      "mtbfCycles": 600,
-      "initialCycles": 300,
+      "metric": "hours",
+      "source": "conveyor",
+      "mtbfHours": 200,
+      "initialHours": 160,
       "parts": [
         { "code": "BRG-6204", "name": "Rolamento 6204", "quantity": 2 },
         { "code": "GRX-LITIO", "name": "Graxa de lítio", "quantity": 1 }
@@ -17,9 +18,10 @@
       "code": "conveyor-motor",
       "name": "Motor da esteira",
       "kind": "motor",
-      "source": "total",
-      "mtbfCycles": 900,
-      "initialCycles": 540,
+      "metric": "hours",
+      "source": "conveyor",
+      "mtbfHours": 300,
+      "initialHours": 180,
       "parts": [
         { "code": "MTR-0.5CV", "name": "Motor 0,5 cv", "quantity": 1 },
         { "code": "BELT-A42", "name": "Correia A42", "quantity": 2 }
@@ -29,6 +31,7 @@
       "code": "fill-valve",
       "name": "Válvula de envase",
       "kind": "valve",
+      "metric": "cycles",
       "source": "filled",
       "mtbfCycles": 400,
       "initialCycles": 340,
@@ -41,6 +44,7 @@
       "code": "cap-valve",
       "name": "Válvula de tampagem",
       "kind": "valve",
+      "metric": "cycles",
       "source": "capped",
       "mtbfCycles": 350,
       "initialCycles": 355,

@@ -49,12 +49,15 @@ configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além 
 `ALERT_STOPPED_MS`. O dashboard exibe os alertas abertos em tempo real e permite
 resolvê-los; o histórico fica em `GET /api/machines/:id/alerts?status=all`.
 
-A manutenção preventiva é baseada no uso: cada componente virtual acumula
-ciclos de envase, tampagem ou total e entra em `warning` ao atingir 80% da vida
-útil, gerando uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS
-reserva peças e é publicada em uma outbox de SAP simulada. O dashboard mostra os
-componentes, as OS ativas e permite concluir a manutenção (resetando o contador).
-Endpoints: `GET /api/machines/:id/maintenance`,
+A manutenção preventiva é baseada no uso: válvulas acumulam ciclos de envase ou
+tampagem, enquanto rolamento e motor da esteira acumulam **horas com o conveyor
+ligado**. Cada componente entra em `warning` ao atingir 80% da vida útil, gerando
+uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS reserva peças
+e é publicada em uma outbox de SAP simulada. O dashboard mostra os componentes
+com a unidade correta, as OS ativas e permite enviar, cancelar ou concluir a
+manutenção (resetando o uso). Endpoints: `GET /api/machines/:id/maintenance`,
+`POST /api/maintenance/orders/:id/send`,
+`POST /api/maintenance/orders/:id/cancel`,
 `POST /api/maintenance/orders/:id/complete` e
 `GET /api/integrations/sap/outbox`.
 
