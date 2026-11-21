@@ -124,7 +124,9 @@ function formatNumber(value) {
 }
 
 function formatMaintenanceUsage(value, unit = 'ciclos') {
-  const number = Number(value) || 0;
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
   return unit === 'h'
     ? `${number.toFixed(1).replace('.', ',')} h`
     : `${formatNumber(number)} ciclos`;

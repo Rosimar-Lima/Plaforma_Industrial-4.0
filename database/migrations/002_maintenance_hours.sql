@@ -3,7 +3,7 @@
 -- database/schema.sql já traz as colunas abaixo.
 
 ALTER TABLE component_usage
-    ADD COLUMN IF NOT EXISTS hours NUMERIC(14,3) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS hours NUMERIC(14,6) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS last_timestamp TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS last_active BOOLEAN NOT NULL DEFAULT false;
 
@@ -20,7 +20,7 @@ BEGIN
 END $$;
 
 ALTER TABLE maintenance_orders
-    ALTER COLUMN source_usage TYPE NUMERIC(14,3);
+    ALTER COLUMN source_usage TYPE NUMERIC(14,6);
 
 -- O valor antigo de source_cycles permanece como uso na origem.
 -- O código decide a unidade (ciclos ou horas) pelo componente da OS.

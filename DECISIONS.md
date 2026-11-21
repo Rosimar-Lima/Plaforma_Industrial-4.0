@@ -535,8 +535,12 @@ Diferenciar o critério de uso por componente em
   componentes que desgastam com a linha ligada.
 - O intervalo só conta quando a amostra anterior indicava acionamento ligado e
   é limitado a 1 hora, para não transformar paradas longas em desgaste.
+- `timeScale` acelera o relógio virtual: `60` significa 1 s real = 1 min virtual.
+  O padrão é `1` (tempo real); no demo, rolamento e motor usam `60` para que o
+  uso seja perceptível sem alterar a unidade `h`.
 - `component_usage` ganha `hours`, `last_timestamp` e `last_active`; a coluna
-  `cycles` continua para as válvulas.
+  `cycles` continua para as válvulas. `hours` e `source_usage` usam 6 casas
+  decimais para não perder incrementos de amostras de 1 s.
 - `maintenance_orders.source_cycles` passa a ser `source_usage` (numérico), com
   a unidade resolvida pelo componente.
 - A API devolve `metric`, `source`, `usage`, `mtbf`, `remaining` e `unit` em vez
@@ -546,12 +550,15 @@ Diferenciar o critério de uso por componente em
 **Consequências:**
 
 - O limiar de 80%/100% continua igual; muda apenas o que é acumulado.
-- Em instalações novas o schema já traz as colunas. Volumes antigos precisam da
-  migração `database/migrations/002_maintenance_hours.sql`.
+- Em instalações novas o schema já traz as colunas. Volumes antigos aplicam
+  `002_maintenance_hours.sql` e, se já estavam nesse modelo, a migração de
+  precisão `003_maintenance_hours_precision.sql`. Linhas sem `last_timestamp`
+  são inicializadas com `initialHours`/`initialCycles` na primeira telemetria.
 - Clientes que liam `cycles`/`mtbfCycles` devem migrar para `usage`/`mtbf`;
   não mantivemos alias para evitar ambiguidade de unidade.
-- O uso por horas depende da periodicidade da telemetria. Com amostras a cada
-  1 s, o valor evolui devagar; os valores iniciais da configuração calibram a
-  demonstração (rolamento já em 80%, motor em 60%).
+- O uso por horas depende da periodicidade da telemetria e de `timeScale`. Com
+  amostras a cada 1 s e `timeScale: 60`, o rolamento evolui cerca de 0,01 h a
+  cada 12 s de conveyor ligado; os valores iniciais calibram a demonstração
+  (rolamento já em 80%, motor em 60%).
 - O reset ao concluir a OS zera `hours` para componentes de horas e `cycles`
   para os de ciclos.

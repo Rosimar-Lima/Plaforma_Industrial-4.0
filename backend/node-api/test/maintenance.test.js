@@ -8,6 +8,7 @@ const {
   counterValue,
   usageSignal,
   hourDelta,
+  nextHourUsage,
   formatUsage,
   usageRatio,
   componentStatus,
@@ -82,6 +83,23 @@ test('normaliza componente de horas com origem da esteira', () => {
   assert.equal(config.components[0].unit, 'h');
   assert.equal(config.components[0].mtbf, 200);
   assert.equal(config.components[0].initial, 160);
+  assert.equal(config.components[0].timeScale, 1);
+});
+
+test('normaliza a escala virtual de tempo para horas', () => {
+  const config = normalizeConfig({
+    components: [
+      {
+        code: 'conveyor-motor',
+        name: 'Motor',
+        metric: 'hours',
+        mtbfHours: 300,
+        timeScale: 60,
+      },
+    ],
+  });
+
+  assert.equal(config.components[0].timeScale, 60);
 });
 
 test('componente de horas ignora campos de ciclos e vice-versa', () => {
@@ -127,13 +145,65 @@ test('acumula horas somente se a amostra anterior estava acionada', () => {
   assert.equal(hourDelta({ ...previous, lastTimestamp: 'invalida' }, timestamp), 0);
 });
 
+test('aplica a escala virtual ao intervalo entre amostras', () => {
+  const previous = {
+    lastActive: true,
+    lastTimestamp: '2026-01-01T00:00:00.000Z',
+  };
+  const timestamp = '2026-01-01T00:00:01.000Z';
+
+  assert.equal(hourDelta(previous, timestamp), 1 / 3600);
+  assert.equal(hourDelta(previous, timestamp, 60), 60 / 3600);
+});
+
 test('limita a 1 hora o intervalo entre amostras', () => {
   const delta = hourDelta(
     { lastActive: true, lastTimestamp: '2026-01-01T00:00:00.000Z' },
-    '2026-01-05T00:00:00.000Z'
+    '2026-01-05T00:00:00.000Z',
+    60
   );
 
   assert.equal(delta, 1);
+});
+
+test('usa horas iniciais quando a linha vem do modelo antigo', () => {
+  const migratedRow = {
+    hours: 0,
+    lastTimestamp: null,
+    lastActive: false,
+  };
+
+  assert.equal(
+    nextHourUsage(migratedRow, bearing, '2026-01-01T01:00:00.000Z'),
+    160
+  );
+  assert.equal(nextHourUsage(null, bearing, '2026-01-01T01:00:00.000Z'), 160);
+});
+
+test('acumula horas a partir de uma linha já inicializada', () => {
+  const row = {
+    hours: 160,
+    lastTimestamp: '2026-01-01T00:30:00.000Z',
+    lastActive: true,
+  };
+
+  assert.equal(
+    nextHourUsage(row, bearing, '2026-01-01T01:00:00.000Z'),
+    160.5
+  );
+});
+
+test('acumula horas com a escala virtual do componente', () => {
+  const row = {
+    hours: 160,
+    lastTimestamp: '2026-01-01T00:00:00.000Z',
+    lastActive: true,
+  };
+
+  assert.equal(
+    nextHourUsage(row, { ...bearing, timeScale: 60 }, '2026-01-01T00:00:01.000Z'),
+    160 + 60 / 3600
+  );
 });
 
 test('formata uso conforme a unidade do componente', () => {

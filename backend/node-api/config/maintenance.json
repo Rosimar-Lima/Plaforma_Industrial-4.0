@@ -7,6 +7,7 @@
       "kind": "bearing",
       "metric": "hours",
       "source": "conveyor",
+      "timeScale": 60,
       "mtbfHours": 200,
       "initialHours": 160,
       "parts": [
@@ -20,6 +21,7 @@
       "kind": "motor",
       "metric": "hours",
       "source": "conveyor",
+      "timeScale": 60,
       "mtbfHours": 300,
       "initialHours": 180,
       "parts": [

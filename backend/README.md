@@ -69,6 +69,8 @@ amostra.
   (`conveyor` usa `line.conveyorOn`; `running` usa `line.running`), com
   `mtbfHours`/`initialHours`. Usado no rolamento e no motor da esteira.
   Intervalos maiores que 1 h são limitados para não contar paradas longas.
+  `timeScale` acelera o relógio virtual (`60` = 1 s real por minuto virtual);
+  o padrão `1` mantém tempo real.
 
 `GET /api/machines/:id/maintenance` devolve `usage`, `mtbf`, `remaining`, `unit`
 (`ciclos` ou `h`), `metric` e `source` por componente. `maintenance_orders`

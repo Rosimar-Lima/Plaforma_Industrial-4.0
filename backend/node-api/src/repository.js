@@ -10,7 +10,7 @@ const {
 const {
   counterValue,
   usageSignal,
-  hourDelta,
+  nextHourUsage,
   componentStatus,
   maintenanceAlert,
   componentView,
@@ -122,8 +122,17 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
 
       const row = previous.rows[0];
       const active = usageSignal(record.line, component.source);
-      const delta = row ? hourDelta(row, record.timestamp) : 0;
-      const hours = row ? Number(row.hours) + delta : component.initial;
+      const hours = nextHourUsage(
+        row
+          ? {
+              hours: row.hours,
+              lastTimestamp: row.last_timestamp,
+              lastActive: row.last_active,
+            }
+          : null,
+        component,
+        record.timestamp
+      );
 
       await client.query(
         `INSERT INTO component_usage

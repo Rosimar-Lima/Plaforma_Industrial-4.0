@@ -32,5 +32,12 @@ Volumes criados antes do desgaste por horas precisam da migração 002. Ela acre
 psql -h localhost -U postgres -d industrial -f migrations/002_maintenance_hours.sql
 ```
 
-A migração 001 deve ser aplicada antes da 002 em volumes antigos. Em instalações
-novas, `schema.sql` já traz tudo e nenhuma migração é necessária.
+Volumes que já usavam o desgaste por horas com 3 casas decimais devem aplicar a
+migração 003 para ampliar `hours` e `source_usage` para 6 casas:
+
+```bash
+psql -h localhost -U postgres -d industrial -f migrations/003_maintenance_hours_precision.sql
+```
+
+A ordem em volumes antigos é 001 → 002 → 003. Em instalações novas,
+`schema.sql` já traz tudo e nenhuma migração é necessária.

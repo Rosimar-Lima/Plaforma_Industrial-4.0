@@ -42,6 +42,7 @@ function normalizeComponent(raw) {
   if (!code || !name || !Number.isFinite(mtbf) || mtbf <= 0) return null;
 
   const initial = Number(rawInitial);
+  const rawTimeScale = Number(raw.timeScale);
 
   return {
     code: code.slice(0, 50),
@@ -52,6 +53,8 @@ function normalizeComponent(raw) {
     unit: metric === 'hours' ? 'h' : 'ciclos',
     mtbf,
     initial: Number.isFinite(initial) ? Math.max(0, initial) : 0,
+    // 1 = tempo real; valores maiores aceleram o relógio virtual do demo.
+    timeScale: Number.isFinite(rawTimeScale) && rawTimeScale > 0 ? rawTimeScale : 1,
     parts: Array.isArray(raw.parts) ? raw.parts.map(normalizePart).filter(Boolean) : [],
   };
 }
@@ -91,7 +94,7 @@ function usageSignal(line, source = 'conveyor') {
 
 // Considera o intervalo entre amostras como tempo de uso quando a amostra
 // anterior indicava o acionamento ligado. O limite evita contar paradas longas.
-function hourDelta(previous, timestamp) {
+function hourDelta(previous, timestamp, timeScale = 1) {
   const last = new Date(previous?.lastTimestamp);
   const current = new Date(timestamp);
   if (!previous?.lastActive) return 0;
@@ -100,7 +103,19 @@ function hourDelta(previous, timestamp) {
   const elapsedMs = current.getTime() - last.getTime();
   if (elapsedMs <= 0) return 0;
 
-  return Math.min(elapsedMs / 3600000, MAX_HOURS_PER_SAMPLE);
+  const scale = Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1;
+  return Math.min((elapsedMs * scale) / 3600000, MAX_HOURS_PER_SAMPLE);
+}
+
+// Uma linha migrada do modelo antigo não tem last_timestamp. Nesse caso o
+// componente ainda não foi inicializado em horas e deve partir do valor
+// calibrado na configuração, em vez de zero.
+function nextHourUsage(previous, component, timestamp) {
+  const initialized = Boolean(previous?.lastTimestamp);
+  const base = initialized ? Number(previous.hours) || 0 : component.initial;
+  const delta = initialized ? hourDelta(previous, timestamp, component.timeScale) : 0;
+
+  return Math.max(0, base + delta);
 }
 
 function formatUsage(value, component) {
@@ -173,6 +188,7 @@ module.exports = {
   counterValue,
   usageSignal,
   hourDelta,
+  nextHourUsage,
   formatUsage,
   usageRatio,
   componentStatus,
