@@ -998,3 +998,106 @@ test('POST /api/telemetry publica reset do acumulado no stream', async () => {
     await app.close();
   }
 });
+
+function validGatewayStatus(overrides = {}) {
+  return {
+    machineId: 'machine-01',
+    connected: true,
+    running: false,
+    lastReadAt: '2026-11-21T20:00:00.000Z',
+    timestamp: '2026-11-21T20:00:00.000Z',
+    failures: 0,
+    error: null,
+    ...overrides,
+  };
+}
+
+test('POST /api/gateway/status aceita heartbeat e consulta connection', async () => {
+  const app = await startApp(createFakeRepository(), { gatewayStaleMs: 60000 });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validGatewayStatus()),
+    });
+
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    assert.equal(body.connection.state, 'online');
+    assert.equal(body.connection.running, false);
+
+    const connection = await fetch(`${app.baseUrl}/api/machines/1/connection`);
+    assert.equal(connection.status, 200);
+    const view = await connection.json();
+    assert.equal(view.connected, true);
+    assert.equal(view.machineId, 'machine-01');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/gateway/status rejeita payload inválido', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ machineId: 'machine-01' }),
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'invalid_payload');
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/connection valida id', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/abc/connection`);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/gateway/status publica eventos de perda e restabelecimento no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const app = await startApp(createFakeRepository(), { streamHub, gatewayStaleMs: 60000 });
+
+  async function sendStatus(overrides) {
+    return fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validGatewayStatus(overrides)),
+    });
+  }
+
+  try {
+    await sendStatus();
+    await sendStatus({ connected: false, error: 'timeout ADS' });
+    await sendStatus({ timestamp: '2026-11-21T20:00:02.000Z' });
+
+    const connectionEvents = broadcasts.filter((item) => item.event === 'connection');
+    assert.equal(connectionEvents.length, 5);
+    assert.equal(connectionEvents[0].data.action, 'update');
+    assert.equal(connectionEvents[1].data.action, 'update');
+    assert.equal(connectionEvents[2].data.action, 'connection.lost');
+    assert.equal(connectionEvents[3].data.action, 'update');
+    assert.equal(connectionEvents[4].data.action, 'connection.restored');
+  } finally {
+    await app.close();
+  }
+});

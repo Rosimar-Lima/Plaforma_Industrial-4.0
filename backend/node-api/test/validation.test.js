@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { validateTelemetry } = require('../src/validation');
+const { validateTelemetry, validateGatewayStatus } = require('../src/validation');
 
 function validPayload() {
   return {
@@ -95,4 +95,48 @@ test('rejeita contadores negativos', () => {
   const payload = validPayload();
   payload.production.filled = -1;
   assert.equal(validateTelemetry(payload).ok, false);
+});
+
+function validStatus() {
+  return {
+    machineId: 'machine-01',
+    connected: true,
+    running: false,
+    lastReadAt: '2026-11-21T20:00:00.000Z',
+    timestamp: '2026-11-21T20:00:00.000Z',
+    failures: 0,
+    error: null,
+  };
+}
+
+test('valida status do gateway', () => {
+  const result = validateGatewayStatus(validStatus());
+  assert.equal(result.ok, true);
+  assert.equal(result.value.machineId, 'machine-01');
+  assert.equal(result.value.connected, true);
+  assert.equal(result.value.running, false);
+});
+
+test('aceita status sem campos opcionais', () => {
+  const result = validateGatewayStatus({ machineId: 'machine-01', connected: false });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.running, null);
+  assert.equal(result.value.failures, 0);
+});
+
+test('rejeita status com campos obrigatórios ou tipos inválidos', () => {
+  assert.equal(validateGatewayStatus(null).ok, false);
+  assert.equal(validateGatewayStatus({ machineId: 'machine-01' }).ok, false);
+
+  const status = validStatus();
+  status.connected = 'true';
+  status.running = 1;
+  status.failures = -1;
+  status.lastReadAt = 'ontem';
+  const result = validateGatewayStatus(status);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('connected')));
+  assert.ok(result.errors.some((error) => error.includes('running')));
+  assert.ok(result.errors.some((error) => error.includes('failures')));
+  assert.ok(result.errors.some((error) => error.includes('lastReadAt')));
 });

@@ -1,8 +1,9 @@
 'use strict';
 
 const express = require('express');
-const { validateTelemetry } = require('./validation');
+const { validateTelemetry, validateGatewayStatus } = require('./validation');
 const { createStreamHub } = require('./stream');
+const { createConnectionTracker } = require('./connection');
 const {
   DEFAULT_SHIFT_HOURS,
   DEFAULT_SHIFT_START_HOUR,
@@ -35,6 +36,7 @@ function createApp({
     shiftHours: DEFAULT_SHIFT_HOURS,
   },
   streamHub = createStreamHub(),
+  gatewayStaleMs = 10000,
 } = {}) {
   if (!repository) {
     throw new Error('repository é obrigatório');
@@ -44,6 +46,19 @@ function createApp({
   app.locals.streamHub = streamHub;
   app.disable('x-powered-by');
   app.use(express.json({ limit: telemetryLimit }));
+
+  const connectionTracker = createConnectionTracker({ staleMs: gatewayStaleMs });
+
+  function publishConnection(machineId, action, connection) {
+    streamHub.broadcast('connection', { machineId, action, connection });
+  }
+
+  const sweepTimer = setInterval(() => {
+    for (const result of connectionTracker.sweep()) {
+      publishConnection(result.machineId, 'lost', result.view);
+    }
+  }, Math.max(1000, Math.min(5000, gatewayStaleMs / 2)));
+  sweepTimer.unref?.();
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
@@ -97,10 +112,51 @@ function createApp({
     }
   });
 
+  app.post('/api/gateway/status', async (req, res, next) => {
+    const result = validateGatewayStatus(req.body);
+
+    if (!result.ok) {
+      res.status(400).json({ error: 'invalid_payload', details: result.errors });
+      return;
+    }
+
+    try {
+      const { view, events } = connectionTracker.update(
+        result.value.machineId,
+        result.value
+      );
+      publishConnection(result.value.machineId, 'update', view);
+      for (const event of events) {
+        publishConnection(result.value.machineId, event, view);
+      }
+      res.status(202).json({ status: 'accepted', connection: view });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/machines', async (req, res, next) => {
     try {
       const machines = await repository.listMachines();
       res.json({ machines });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/machines/:id/connection', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    try {
+      // O gateway reporta o código (machine-01), mas a URL usa o id numérico.
+      // Resolve o código para consultar o mesmo heartbeat usado no stream.
+      const machines = await repository.listMachines();
+      const machine = machines.find((item) => Number(item.id) === machineId);
+      res.json(connectionTracker.view(machine?.code ?? String(machineId)));
     } catch (error) {
       next(error);
     }

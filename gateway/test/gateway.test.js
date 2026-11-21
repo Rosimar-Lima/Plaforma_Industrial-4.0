@@ -165,3 +165,102 @@ test('mantém a conexão quando a publicação falha', async () => {
   assert.equal(errors.length, 2);
   assert.match(errors[0], /falha na publicação/);
 });
+
+test('reporta status online com o estado da linha', async () => {
+  const statuses = [];
+  const adapter = {
+    async connect() {},
+    async readTags() {
+      return validValues();
+    },
+    async close() {},
+  };
+  const gateway = createGateway({
+    adapter,
+    publisher: {
+      async publish() {},
+      async publishStatus(status) {
+        statuses.push(status);
+      },
+    },
+    machineId: 'machine-01',
+    clock: () => new Date('2026-11-21T20:00:00.000Z'),
+    logger: silentLogger(),
+  });
+
+  await gateway.pollOnce();
+
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].connected, true);
+  assert.equal(statuses[0].running, true);
+  assert.equal(statuses[0].lastReadAt, '2026-11-21T20:00:00.000Z');
+  assert.equal(statuses[0].failures, 0);
+  assert.equal(statuses[0].error, null);
+});
+
+test('reporta status offline com falhas ao falhar leitura', async () => {
+  const statuses = [];
+  const errors = [];
+  let reads = 0;
+  const adapter = {
+    async connect() {},
+    async readTags() {
+      reads += 1;
+      if (reads === 1) throw new Error('timeout ADS');
+      return validValues();
+    },
+    async close() {},
+  };
+  const gateway = createGateway({
+    adapter,
+    publisher: {
+      async publish() {},
+      async publishStatus(status) {
+        statuses.push(status);
+      },
+    },
+    machineId: 'machine-01',
+    logger: silentLogger(errors),
+  });
+
+  await gateway.pollOnce();
+  assert.equal(statuses[0].connected, false);
+  assert.equal(statuses[0].failures, 1);
+  assert.equal(statuses[0].error, 'timeout ADS');
+  assert.equal(statuses[0].running, null);
+
+  await gateway.pollOnce();
+  assert.equal(statuses[1].connected, true);
+  assert.equal(statuses[1].failures, 0);
+  assert.equal(statuses[1].running, true);
+});
+
+test('continua publicando telemetria se o status falhar', async () => {
+  const errors = [];
+  const published = [];
+  const gateway = createGateway({
+    adapter: {
+      async connect() {},
+      async readTags() {
+        return validValues();
+      },
+      async close() {},
+    },
+    publisher: {
+      async publish(payload) {
+        published.push(payload);
+      },
+      async publishStatus() {
+        throw new Error('backend fora');
+      },
+    },
+    machineId: 'machine-01',
+    logger: silentLogger(errors),
+  });
+
+  await gateway.pollOnce();
+
+  assert.equal(published.length, 1);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /falha ao publicar status/);
+});

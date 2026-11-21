@@ -657,3 +657,44 @@ acumulado explícito nem registrava o reset como evento.
 - Eventos `production.reset` permitem montar, no futuro, um histórico de resets
   sem consultar o payload bruto.
 - Esta decisão não altera o contrato de `POST /api/telemetry`.
+
+---
+
+# ADR-020 — Estado de comunicação da linha no dashboard
+
+**Status:** Aceita
+
+**Contexto:**
+
+Com a telemetria real ativa, o gateway publica amostras somente quando consegue
+ler o CLP. Se o ADS cair ou o TwinCAT desligar, o backend para de receber dados,
+mas o dashboard continuava exibindo a última amostra — sem distinguir **linha
+parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
+
+**Decisão:**
+
+- O gateway publica um heartbeat leve em `POST /api/gateway/status` a cada ciclo
+  de polling, com `connected`, `running`, `lastReadAt`, `timestamp`, `failures` e
+  `error`. O status é enviado mesmo quando a leitura falha.
+- O backend rastreia o heartbeat em memória (`createConnectionTracker`) e
+  considera a conexão expirada após 10 s sem sinal. Um `sweep` periódico emite
+  `connection.lost` quando o gateway para sem avisar.
+- A API expõe `GET /api/machines/:id/connection`, resolvendo o código da máquina
+  (`machine-01`) a partir do id numérico da URL.
+- O stream SSE publica eventos `connection` com `action: 'update'`,
+  `'connection.lost'` e `'connection.restored'`.
+- O dashboard mostra um badge separado: **Linha: operando** (verde),
+  **Linha: parada** (âmbar, CLP responde) e **Linha: sem comunicação** (vermelho).
+  O badge existente “Online/Offline” continua representando apenas a conexão
+  do dashboard com a API.
+- O status não é persistido em banco: ele representa o estado atual da sessão,
+  não um histórico de falhas.
+
+**Consequências:**
+
+- “Linha parada” e “sem comunicação” deixam de ser ambíguos no painel.
+- Se o backend cair, o gateway continua publicando telemetria quando volta; o
+  heartbeat expirado é corrigido no primeiro status recebido.
+- O tracking é em memória: após reiniciar o backend, o estado volta a
+  `unknown` até o próximo heartbeat (no máximo 1 s com o gateway ativo).
+- Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.

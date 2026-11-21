@@ -45,6 +45,7 @@ const state = {
   stream: null,
   streamOnline: false,
   pollOk: false,
+  lineConnection: null,
 };
 
 const el = {
@@ -52,6 +53,7 @@ const el = {
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
   connection: document.getElementById('connection'),
+  lineConnection: document.getElementById('line-connection'),
   lastUpdate: document.getElementById('last-update'),
   running: document.getElementById('stat-running'),
   filled: document.getElementById('prod-filled'),
@@ -118,6 +120,60 @@ function updateConnection() {
   el.connection.textContent = label;
   el.connection.classList.remove('online', 'polling', 'offline');
   el.connection.classList.add(mode);
+}
+
+function renderLineConnection(connection) {
+  const badge = el.lineConnection;
+  badge.classList.remove('line-online', 'line-stopped', 'line-offline', 'line-unknown');
+
+  if (!connection || connection.state === 'unknown') {
+    badge.textContent = 'Linha: —';
+    badge.title = 'Aguardando heartbeat do gateway';
+    badge.classList.add('line-unknown');
+    return;
+  }
+
+  const reportedAt = connection.lastReadAt
+    ? new Date(connection.lastReadAt).toLocaleTimeString('pt-BR')
+    : null;
+
+  if (connection.state === 'offline') {
+    badge.textContent = 'Linha: sem comunicação';
+    badge.title = connection.error
+      ? `Falha: ${connection.error}`
+      : 'Gateway sem heartbeat; CLP pode estar desligado';
+    badge.classList.add('line-offline');
+    return;
+  }
+
+  if (connection.running === true) {
+    badge.textContent = 'Linha: operando';
+    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
+    badge.classList.add('line-online');
+  } else if (connection.running === false) {
+    badge.textContent = 'Linha: parada';
+    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
+    badge.classList.add('line-stopped');
+  } else {
+    badge.textContent = 'Linha: conectada';
+    badge.title = 'CLP respondeu, mas o estado de operação é desconhecido';
+    badge.classList.add('line-unknown');
+  }
+}
+
+async function refreshLineConnection() {
+  if (!state.machineId) {
+    renderLineConnection(null);
+    return;
+  }
+
+  try {
+    const connection = await getJson(`/api/machines/${state.machineId}/connection`);
+    state.lineConnection = connection;
+    renderLineConnection(connection);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function formatNumber(value) {
@@ -797,6 +853,7 @@ function refreshAll() {
   void refreshMaintenance();
   void refreshProduction();
   void refreshProductionTotal();
+  void refreshLineConnection();
 }
 
 async function loadMachines() {
@@ -819,6 +876,7 @@ async function loadMachines() {
       renderMaintenance({ components: [], orders: [] });
       renderProduction({ buckets: [] });
       renderProductionTotal(null);
+      renderLineConnection(null);
       drawChart([]);
       state.pollOk = true;
       updateConnection();
@@ -949,6 +1007,19 @@ function connectStream() {
     renderProductionTotal(payload.totals);
   });
 
+  source.addEventListener('connection', (event) => {
+    let payload;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (error) {
+      return;
+    }
+
+    if (!payload || payload.machineId !== state.machineCode) return;
+    state.lineConnection = payload.connection ?? null;
+    renderLineConnection(state.lineConnection);
+  });
+
   source.addEventListener('alert', () => {
     void refreshAlerts();
   });
@@ -982,6 +1053,10 @@ async function start() {
   setInterval(() => {
     if (state.machineId) void refreshOee();
   }, POLL_OEE_MS);
+
+  setInterval(() => {
+    if (state.machineId && !state.streamOnline) void refreshLineConnection();
+  }, POLL_TELEMETRY_MS);
 
   setInterval(() => {
     if (state.machineId) void refreshAlerts();
