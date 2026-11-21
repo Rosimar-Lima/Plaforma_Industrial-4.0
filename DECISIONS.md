@@ -687,12 +687,19 @@ parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
   **Linha: parada** (âmbar, CLP responde) e **Linha: sem comunicação** (vermelho).
   O badge existente “Online/Offline” continua representando apenas a conexão
   do dashboard com a API.
+- O card principal **Operação** reflete o mesmo estado, com prioridade para a
+  comunicação: `Sem comunicação` (vermelho), `Parada` (âmbar) ou
+  `Em operação` (verde). Assim a perda de comunicação não passa despercebida
+  no indicador principal.
 - O status não é persistido em banco: ele representa o estado atual da sessão,
   não um histórico de falhas.
 
 **Consequências:**
 
 - “Linha parada” e “sem comunicação” deixam de ser ambíguos no painel.
+- Reset da aplicação ou desligamento dos motores com o CLP ainda respondendo
+  continuam sendo `Parada` — não são falha de comunicação. O reset de produção
+  é sinalizado separadamente pelo evento `production.reset`.
 - Se o backend cair, o gateway continua publicando telemetria quando volta; o
   heartbeat expirado é corrigido no primeiro status recebido.
 - O tracking é em memória: após reiniciar o backend, o estado volta a

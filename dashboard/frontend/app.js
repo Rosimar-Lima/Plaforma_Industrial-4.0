@@ -123,6 +123,9 @@ function updateConnection() {
 }
 
 function renderLineConnection(connection) {
+  state.lineConnection = connection ?? null;
+  renderOperation();
+
   const badge = el.lineConnection;
   badge.classList.remove('line-online', 'line-stopped', 'line-offline', 'line-unknown');
 
@@ -169,7 +172,6 @@ async function refreshLineConnection() {
 
   try {
     const connection = await getJson(`/api/machines/${state.machineId}/connection`);
-    state.lineConnection = connection;
     renderLineConnection(connection);
   } catch (error) {
     console.error(error);
@@ -210,13 +212,32 @@ function setRatio(valueEl, barEl, ratio) {
   barEl.style.width = `${(safe * 100).toFixed(1)}%`;
 }
 
-function setBoolean(elmt, active, activeLabel, inactiveLabel) {
-  elmt.textContent = active ? activeLabel : inactiveLabel;
-  elmt.style.color = active ? 'var(--ok)' : 'var(--muted)';
+function renderOperation() {
+  const connection = state.lineConnection;
+
+  if (connection && connection.state === 'offline') {
+    el.running.textContent = 'Sem comunicação';
+    el.running.style.color = 'var(--danger)';
+    el.running.title = 'O gateway não consegue ler o CLP da linha';
+    return;
+  }
+
+  el.running.title = '';
+
+  const latest = state.samples[0];
+  if (!latest) {
+    el.running.textContent = '—';
+    el.running.style.color = 'var(--muted)';
+    return;
+  }
+
+  const operando = latest.payload?.line?.running === true;
+  el.running.textContent = operando ? 'Em operação' : 'Parada';
+  el.running.style.color = operando ? 'var(--ok)' : 'var(--warn)';
 }
 
 function renderPlaceholders() {
-  el.running.textContent = '—';
+  renderOperation();
   el.filled.textContent = '0';
   el.capped.textContent = '0';
   el.total.textContent = '0';
@@ -232,10 +253,9 @@ function renderTelemetry(samples) {
     return;
   }
 
-  const line = latest.payload?.line ?? {};
   const production = latest.payload?.production ?? {};
 
-  setBoolean(el.running, line.running, 'Em operação', 'Parada');
+  renderOperation();
 
   el.filled.textContent = formatNumber(production.filled);
   el.capped.textContent = formatNumber(production.capped);
@@ -1016,8 +1036,7 @@ function connectStream() {
     }
 
     if (!payload || payload.machineId !== state.machineCode) return;
-    state.lineConnection = payload.connection ?? null;
-    renderLineConnection(state.lineConnection);
+    renderLineConnection(payload.connection ?? null);
   });
 
   source.addEventListener('alert', () => {
