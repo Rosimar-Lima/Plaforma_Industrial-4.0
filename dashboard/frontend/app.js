@@ -503,8 +503,8 @@ function renderMaintenanceOrders(orders, names) {
       .map((part) => `${part.quantity}x ${part.code}`)
       .join(', ') || '—';
 
-    const erpCell = document.createElement('td');
-    erpCell.textContent = order.erp?.external_id ?? '—';
+    const sapCell = document.createElement('td');
+    sapCell.textContent = order.sap?.external_id ?? '—';
 
     const actionCell = document.createElement('td');
     const button = document.createElement('button');
@@ -514,7 +514,7 @@ function renderMaintenanceOrders(orders, names) {
     button.textContent = 'Concluir';
     actionCell.append(button);
 
-    row.append(idCell, componentCell, statusCell, priorityCell, partsCell, erpCell, actionCell);
+    row.append(idCell, componentCell, statusCell, priorityCell, partsCell, sapCell, actionCell);
     el.maintenanceOrdersBody.append(row);
   }
 }

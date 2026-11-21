@@ -22,7 +22,7 @@ transforma em informação acionável (OEE, disponibilidade, alertas).
 - Persistência em PostgreSQL.
 - Dashboard com indicadores, histórico e tempo real (SSE).
 - Alertas básicos por limite de sensor e por linha parada.
-- Manutenção preventiva baseada em uso, com OS e outbox de ERP simulada.
+- Manutenção preventiva baseada em uso, com OS e outbox de SAP simulada.
 - Infraestrutura local via Docker Compose.
 
 ### Excluído (por enquanto)

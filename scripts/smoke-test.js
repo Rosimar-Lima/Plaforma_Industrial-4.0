@@ -206,8 +206,8 @@ async function main() {
     });
   }
 
-  await run('GET /api/integrations/erp/outbox', async () => {
-    const res = await api('/api/integrations/erp/outbox?limit=5');
+  await run('GET /api/integrations/sap/outbox', async () => {
+    const res = await api('/api/integrations/sap/outbox?limit=5');
     assert(res.status === 200, `status ${res.status}`);
     assert(Array.isArray(res.json?.outbox), 'campo outbox ausente');
     return `${res.json.outbox.length} evento(s)`;

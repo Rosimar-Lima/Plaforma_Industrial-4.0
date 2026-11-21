@@ -330,14 +330,14 @@ intercambiáveis.
 
 ---
 
-# ADR-012 — Manutenção preventiva baseada em uso e ERP simulado
+# ADR-012 — Manutenção preventiva baseada em uso e SAP simulado
 
 **Status:** Aceita
 
 **Contexto:**
 
 O MVP precisa demonstrar manutenção sem depender de sensores de vibração,
-temperatura ou de um ERP real. A plataforma é somente de monitoramento
+temperatura ou de um SAP real. A plataforma é somente de monitoramento
 (ADR-002) e não deve enviar comandos ao PLC.
 
 **Decisão:**
@@ -351,7 +351,7 @@ Modelar manutenção preventiva a partir dos contadores de produção já ingeri
 - A ingestão gera alerta (`maintenance.<componente>`) e garante uma única OS
   ativa por componente, com status `planned` (warning) ou `open` (critical).
 - A OS reserva peças em `maintenance_order_parts` e publica o evento
-  `maintenance_order.created` em `erp_outbox`, simulando a integração com ERP.
+  `maintenance_order.created` em `sap_outbox`, simulando a integração com SAP.
 - Concluir a OS (`POST /api/maintenance/orders/:id/complete`) reseta o contador
   do componente e resolve o alerta correspondente.
 - Os ciclos iniciais da configuração são calibrados para a demonstração; em
@@ -359,10 +359,10 @@ Modelar manutenção preventiva a partir dos contadores de produção já ingeri
 
 **Consequências:**
 
-- Nenhum hardware ou ERP adicional é necessário para a demo.
+- Nenhum hardware ou SAP adicional é necessário para a demo.
 - A regra é determinística e testável com os contadores existentes.
-- A troca da outbox simulada por um ERP real fica isolada em
-  `erp_outbox`/webhook.
+- A troca da outbox simulada por um SAP real fica isolada em
+  `sap_outbox`/webhook.
 - A manutenção é preventiva (baseada em uso), não preditiva.
 
 ---
@@ -432,3 +432,34 @@ Substituir o gráfico por `volume envasado acumulado`:
   basta alterar `BOTTLE_VOLUME_ML` (ou torná-lo configurável depois).
 - O valor é o volume acumulado desde a origem do contador, não o volume da
   janela de tempo selecionada no filtro de período.
+
+---
+
+# ADR-015 — Nomenclatura SAP para a integração simulada
+
+**Status:** Aceita
+
+**Contexto:**
+
+A integração simulada de manutenção era chamada genericamente de ERP. O sistema
+corporativo adotado pela planta é SAP, e o código, a API e os documentos devem
+usar o mesmo nome.
+
+**Decisão:**
+
+Renomear toda a superfície da integração de ERP para SAP:
+
+- endpoint `GET /api/integrations/sap/outbox` (antes `/erp/outbox`);
+- tabela `sap_outbox` e índice `idx_sap_outbox_order`;
+- métodos `insertSapOutbox` / `listSapOutbox` e campo `sap` nos pedidos de
+  manutenção (antes `erp`);
+- prefixo `SAP-<id>-<sufixo>` nos IDs externos e chave `sapOrderId` no payload;
+- textos, ADR-012 e documentação atualizados.
+
+**Consequências:**
+
+- Clientes que chamavam a rota antiga precisam ser atualizados; não mantenhamos
+  alias para evitar manter duas nomenclaturas.
+- Volumes antigos exigem `database/migrations/001_rename_erp_to_sap.sql`; o
+  schema novo já cria `sap_outbox`.
+- Eventos antigos têm IDs e payloads convertidos pela migração.

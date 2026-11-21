@@ -304,7 +304,7 @@ function createApp({
     }
   });
 
-  app.get('/api/integrations/erp/outbox', async (req, res, next) => {
+  app.get('/api/integrations/sap/outbox', async (req, res, next) => {
     const limit = parseLimit(req.query.limit, { fallback: 20, max: 100 });
     if (limit === null) {
       res.status(400).json({ error: 'invalid_limit' });
@@ -312,7 +312,7 @@ function createApp({
     }
 
     try {
-      const outbox = await repository.listErpOutbox({ limit });
+      const outbox = await repository.listSapOutbox({ limit });
       res.json({ limit, outbox });
     } catch (error) {
       next(error);

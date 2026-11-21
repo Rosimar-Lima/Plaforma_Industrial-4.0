@@ -360,10 +360,10 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /api/integrations/erp/outbox:
+  /api/integrations/sap/outbox:
     get:
       tags: [Integrações]
-      summary: Lista os eventos publicados na outbox do ERP
+      summary: Lista os eventos publicados na outbox do SAP
       parameters:
         - name: limit
           in: query
@@ -387,7 +387,7 @@ paths:
                   outbox:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ErpOutboxEntry'
+                      $ref: '#/components/schemas/SapOutboxEntry'
         '400':
           description: Limite inválido
           content:
@@ -766,7 +766,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MaintenancePart'
-        erp:
+        sap:
           type: object
           nullable: true
           properties:
@@ -778,7 +778,7 @@ components:
               example: sent
             external_id:
               type: string
-              example: ERP-1-MWOEZ6OF
+              example: SAP-1-MWOEZ6OF
             sent_at:
               type: string
               format: date-time
@@ -834,7 +834,7 @@ components:
           items:
             $ref: '#/components/schemas/MaintenanceOrder'
 
-    ErpOutboxEntry:
+    SapOutboxEntry:
       type: object
       properties:
         id:
@@ -849,7 +849,7 @@ components:
           example: sent
         external_id:
           type: string
-          example: ERP-1-MWOEZ6OF
+          example: SAP-1-MWOEZ6OF
         payload:
           type: object
         created_at:

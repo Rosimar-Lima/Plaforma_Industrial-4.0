@@ -7,7 +7,7 @@ simulados, sem PLC real.
 
 O objetivo é confirmar que a plataforma sobe do zero, recebe telemetria, calcula
 indicadores, exibe o dashboard, gera alertas, controla manutenção preventiva e
-expõe a integração simulada com ERP — tudo com os comandos documentados.
+expõe a integração simulada com SAP — tudo com os comandos documentados.
 
 ---
 
@@ -66,7 +66,7 @@ O script não tem dependências e valida:
 | `GET /api/machines/:id/production` | `200` com intervalos e totais |
 | `GET /api/machines/:id/alerts` | `200` com histórico |
 | `GET /api/machines/:id/maintenance` | `200` com componentes e OS |
-| `GET /api/integrations/erp/outbox` | `200` com eventos |
+| `GET /api/integrations/sap/outbox` | `200` com eventos |
 | `GET /` | `200` com HTML do dashboard |
 | `GET /api/stream` | evento `ready` recebido |
 
@@ -166,7 +166,7 @@ Restaurare `ALERT_STOPPED_MS=60000` ao final.
 
 **Esperado:** componentes com percentual de uso, ciclos restantes e status
 `ok`/`warning`/`critical`. Componentes acima de 80% têm OS `planned`; em 100% a
-OS fica `open`. A OS mostra peças reservadas e o evento enviado ao ERP simulado.
+OS fica `open`. A OS mostra peças reservadas e o evento enviado ao SAP simulado.
 
 3. Clique em **Concluir** em uma OS ativa.
 
@@ -177,14 +177,14 @@ status volta para `ok` e o alerta `maintenance.*` correspondente é resolvido.
 > telemetria para aparecer, porque os contadores partem dos valores iniciais de
 > `backend/node-api/config/maintenance.json`.
 
-### AT-07 — Outbox de ERP simulada
+### AT-07 — Outbox de SAP simulada
 
 ```powershell
-Invoke-RestMethod http://localhost:3000/api/integrations/erp/outbox?limit=20
+Invoke-RestMethod http://localhost:3000/api/integrations/sap/outbox?limit=20
 ```
 
 **Esperado:** eventos `maintenance_order.created`, com `external_id` no formato
-`ERP-<id>-<sufixo>`, status `sent` e payload com os dados da OS.
+`SAP-<id>-<sufixo>`, status `sent` e payload com os dados da OS.
 
 ### AT-08 — Gateway no modo simulador
 

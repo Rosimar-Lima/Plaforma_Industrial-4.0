@@ -157,7 +157,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return { action: 'created', alert: inserted.rows[0] };
   }
 
-  async function insertErpOutbox(client, order, component, eventType) {
+  async function insertSapOutbox(client, order, component, eventType) {
     const parts = await client.query(
       `SELECT part_code, part_name, quantity
        FROM maintenance_order_parts
@@ -166,10 +166,10 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       [order.id]
     );
 
-    const externalId = `ERP-${order.id}-${Date.now().toString(36).toUpperCase()}`;
+    const externalId = `SAP-${order.id}-${Date.now().toString(36).toUpperCase()}`;
     const payload = {
       event: eventType,
-      erpOrderId: externalId,
+      sapOrderId: externalId,
       machineId: order.machine_id,
       order: {
         id: order.id,
@@ -192,7 +192,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     };
 
     await client.query(
-      `INSERT INTO erp_outbox (order_id, event_type, payload, status, external_id, sent_at)
+      `INSERT INTO sap_outbox (order_id, event_type, payload, status, external_id, sent_at)
        VALUES ($1, $2, $3::jsonb, 'sent', $4, now())`,
       [order.id, eventType, JSON.stringify(payload), externalId]
     );
@@ -237,7 +237,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         [current.id, desiredStatus, desiredPriority, cycles, timestamp]
       );
 
-      await insertErpOutbox(client, updated.rows[0], component, 'maintenance_order.escalated');
+      await insertSapOutbox(client, updated.rows[0], component, 'maintenance_order.escalated');
 
       return { action: 'escalated', order: updated.rows[0] };
     }
@@ -263,7 +263,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       parts.push(partResult.rows[0]);
     }
 
-    await insertErpOutbox(client, order, component, 'maintenance_order.created');
+    await insertSapOutbox(client, order, component, 'maintenance_order.created');
 
     return { action: 'created', order, parts };
   }
@@ -554,7 +554,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           pool.query(
             `SELECT DISTINCT ON (order_id)
                     order_id, event_type, status, external_id, sent_at, created_at
-             FROM erp_outbox
+             FROM sap_outbox
              WHERE order_id = ANY($1::bigint[])
              ORDER BY order_id, id DESC`,
             [orderIds]
@@ -573,7 +573,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           });
         }
 
-        const erpByOrder = new Map(
+        const sapByOrder = new Map(
           outboxResult.rows.map((row) => [
             String(row.order_id),
             {
@@ -588,7 +588,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         for (const order of orders) {
           const key = String(order.id);
           order.parts = partsByOrder.get(key) ?? [];
-          order.erp = erpByOrder.get(key) ?? null;
+          order.sap = sapByOrder.get(key) ?? null;
         }
       }
 
@@ -610,7 +610,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
                 priority: order.priority,
                 due_at: order.due_at,
                 parts: order.parts ?? [],
-                erp: order.erp ?? null,
+                sap: order.sap ?? null,
               }
             : null,
         };
@@ -693,10 +693,10 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       }
     },
 
-    async listErpOutbox({ limit = 20 } = {}) {
+    async listSapOutbox({ limit = 20 } = {}) {
       const result = await pool.query(
         `SELECT id, order_id, event_type, status, external_id, payload, created_at, sent_at
-         FROM erp_outbox
+         FROM sap_outbox
          ORDER BY id DESC
          LIMIT $1`,
         [limit]

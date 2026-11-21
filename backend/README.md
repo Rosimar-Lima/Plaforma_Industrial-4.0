@@ -21,7 +21,7 @@ API responsável por ingestão de telemetria, cálculo de indicadores e consulta
 | `POST` | `/api/alerts/:id/resolve` | Resolve um alerta aberto. |
 | `GET` | `/api/machines/:id/maintenance` | Vida útil dos componentes e OS ativas. |
 | `POST` | `/api/maintenance/orders/:id/complete` | Conclui uma OS e reseta o contador. |
-| `GET` | `/api/integrations/erp/outbox` | Eventos enviados ao ERP simulado. |
+| `GET` | `/api/integrations/sap/outbox` | Eventos enviados ao SAP simulado. |
 
 `POST /api/telemetry` responde `202` quando a amostra é aceita e `400` com
 `details` quando o payload é inválido.

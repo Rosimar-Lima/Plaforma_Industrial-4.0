@@ -52,11 +52,11 @@ resolvê-los; o histórico fica em `GET /api/machines/:id/alerts?status=all`.
 A manutenção preventiva é baseada no uso: cada componente virtual acumula
 ciclos de envase, tampagem ou total e entra em `warning` ao atingir 80% da vida
 útil, gerando uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS
-reserva peças e é publicada em uma outbox de ERP simulada. O dashboard mostra os
+reserva peças e é publicada em uma outbox de SAP simulada. O dashboard mostra os
 componentes, as OS ativas e permite concluir a manutenção (resetando o contador).
 Endpoints: `GET /api/machines/:id/maintenance`,
 `POST /api/maintenance/orders/:id/complete` e
-`GET /api/integrations/erp/outbox`.
+`GET /api/integrations/sap/outbox`.
 
 O histórico de produção agrupa os contadores por hora cheia ou por turno da
 planta em `GET /api/machines/:id/production?bucket=hour|shift`. Cada intervalo

@@ -154,7 +154,7 @@ function createFakeRepository() {
             status: 'planned',
             priority: 'high',
             parts: [{ code: 'KIT-VAL-FILL', name: 'Kit', quantity: 1, status: 'reserved' }],
-            erp: { external_id: 'ERP-3-X', status: 'sent' },
+            sap: { external_id: 'SAP-3-X', status: 'sent' },
           },
         ],
       };
@@ -170,14 +170,14 @@ function createFakeRepository() {
         completed_at: '2026-01-01T00:10:00.000Z',
       };
     },
-    async listErpOutbox({ limit = 20 } = {}) {
+    async listSapOutbox({ limit = 20 } = {}) {
       return [
         {
           id: 1,
           order_id: 3,
           event_type: 'maintenance_order.created',
           status: 'sent',
-          external_id: 'ERP-3-X',
+          external_id: 'SAP-3-X',
           payload: {},
           created_at: '2026-01-01T00:00:00.000Z',
           sent_at: '2026-01-01T00:00:00.000Z',
@@ -585,7 +585,7 @@ test('GET /api/machines/:id/maintenance retorna vida útil e OS abertas', async 
     assert.equal(body.components.length, 1);
     assert.equal(body.components[0].status, 'warning');
     assert.equal(body.orders.length, 1);
-    assert.equal(body.orders[0].erp.external_id, 'ERP-3-X');
+    assert.equal(body.orders[0].sap.external_id, 'SAP-3-X');
   } finally {
     await app.close();
   }
@@ -639,18 +639,18 @@ test('POST /api/maintenance/orders/:id/complete conclui e publica no stream', as
   }
 });
 
-test('GET /api/integrations/erp/outbox lista envios ao ERP', async () => {
+test('GET /api/integrations/sap/outbox lista envios ao SAP', async () => {
   const app = await startApp(createFakeRepository());
 
   try {
-    const response = await fetch(`${app.baseUrl}/api/integrations/erp/outbox?limit=5`);
+    const response = await fetch(`${app.baseUrl}/api/integrations/sap/outbox?limit=5`);
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.limit, 5);
     assert.equal(body.outbox.length, 1);
-    assert.equal(body.outbox[0].external_id, 'ERP-3-X');
+    assert.equal(body.outbox[0].external_id, 'SAP-3-X');
 
-    const invalid = await fetch(`${app.baseUrl}/api/integrations/erp/outbox?limit=0`);
+    const invalid = await fetch(`${app.baseUrl}/api/integrations/sap/outbox?limit=0`);
     assert.equal(invalid.status, 400);
     assert.equal((await invalid.json()).error, 'invalid_limit');
   } finally {

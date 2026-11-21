@@ -95,7 +95,7 @@ Detectar eventos industriais relevantes.
 - [x] Notificações
 - [x] Histórico de eventos
 - [x] Manutenção preventiva baseada em uso
-- [x] Outbox de integração com ERP (simulada)
+- [x] Outbox de integração com SAP (simulada)
 
 Entregável:
 

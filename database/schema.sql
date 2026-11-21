@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS maintenance_order_parts (
 CREATE INDEX IF NOT EXISTS idx_maintenance_parts_order
     ON maintenance_order_parts (order_id, id);
 
-CREATE TABLE IF NOT EXISTS erp_outbox (
+CREATE TABLE IF NOT EXISTS sap_outbox (
     id          BIGSERIAL PRIMARY KEY,
     order_id    BIGINT NOT NULL REFERENCES maintenance_orders (id) ON DELETE CASCADE,
     event_type  VARCHAR(60) NOT NULL,
@@ -109,5 +109,5 @@ CREATE TABLE IF NOT EXISTS erp_outbox (
     sent_at     TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_erp_outbox_order
-    ON erp_outbox (order_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sap_outbox_order
+    ON sap_outbox (order_id, created_at DESC);
