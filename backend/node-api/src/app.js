@@ -66,6 +66,13 @@ function createApp({
         line: result.value.line,
         production: result.value.production,
       });
+      if (saved.productionTotal) {
+        streamHub.broadcast('production', {
+          machineId: result.value.machineId,
+          action: saved.productionReset ? 'reset' : 'update',
+          totals: saved.productionTotal,
+        });
+      }
       for (const event of saved.alerts ?? []) {
         streamHub.broadcast('alert', {
           machineId: result.value.machineId,
@@ -158,6 +165,21 @@ function createApp({
         nominalCapacityPerHour: nominal,
       });
       res.json({ machineId, from, to, ...indicators });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/machines/:id/production/total', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    try {
+      const totals = await repository.getProductionTotal(machineId);
+      res.json(totals);
     } catch (error) {
       next(error);
     }

@@ -39,5 +39,13 @@ migração 003 para ampliar `hours` e `source_usage` para 6 casas:
 psql -h localhost -U postgres -d industrial -f migrations/003_maintenance_hours_precision.sql
 ```
 
-A ordem em volumes antigos é 001 → 002 → 003. Em instalações novas,
+Volumes que receberam telemetria antes do acumulado resistente a reset devem
+aplicar a migração 004. Ela cria `production_totals` e inicializa o acumulado com
+o último contador encontrado no histórico, sem apagar nenhuma amostra:
+
+```bash
+psql -h localhost -U postgres -d industrial -f migrations/004_production_totals.sql
+```
+
+A ordem em volumes antigos é 001 → 002 → 003 → 004. Em instalações novas,
 `schema.sql` já traz tudo e nenhuma migração é necessária.

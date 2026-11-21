@@ -61,6 +61,25 @@ original. O campo `step` é opcional: se o PLC expuser a etapa (recomendado,
 ex.: `GVL_HMI.nStep`), adicione ao mapa; caso contrário o gateway a estima pelos
 sinais de esteira, sensores e envase.
 
+### Diagnóstico ADS (somente leitura)
+
+Antes de publicar telemetria, valide a conexão e os símbolos sem escrever no CLP
+nem chamar o backend:
+
+```powershell
+npm install
+npm run diagnostico -- --ams 39.90.64.65.1.1 --port 851 --timeout 5000
+```
+
+O script `gateway/scripts/diagnostico-ads.js` conecta pelo router ADS local, lê o
+runtime (`readPlcRuntimeState`), carrega o cache de símbolos/tipos e imprime o
+valor de cada símbolo do mapa configurado. Use `--symbols` para testar outro
+arquivo de mapa.
+
+O AMS Net ID `39.90.64.65.1.1` é uma rota ADS estática configurada no host; ele
+não deve ser usado como endereço IP (`ping 39.90.64.65` falha). Em caso de
+falha, confira a rota no TwinCAT e se o runtime está em `Run`.
+
 ### OPC-UA
 
 | Variável | Padrão |

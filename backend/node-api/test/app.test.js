@@ -931,3 +931,70 @@ test('GET /api/machines/:id/production valida id, bucket, período e intervalo',
     await app.close();
   }
 });
+
+test('GET /api/machines/:id/production/total devolve o acumulado do banco', async () => {
+  const repository = createFakeRepository();
+  repository.getProductionTotal = async (machineId) => ({
+    machineId,
+    accumulatedProduced: 12430,
+    accumulatedGood: 12400,
+    lastCounter: 0,
+    lastGoodCounter: 0,
+    lastResetAt: '2026-11-21T19:05:00.000Z',
+    updatedAt: '2026-11-21T19:05:00.000Z',
+  });
+
+  const app = await startApp(repository);
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/1/production/total`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).accumulatedProduced, 12430);
+
+    const invalid = await fetch(`${app.baseUrl}/api/machines/abc/production/total`);
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/telemetry publica reset do acumulado no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const repository = createFakeRepository();
+  repository.ingestTelemetry = async (record) => ({
+    machineId: record.machineId,
+    recordedAt: record.timestamp,
+    productionReset: true,
+    productionTotal: {
+      accumulatedProduced: 12430,
+      accumulatedGood: 12400,
+      lastResetAt: record.timestamp,
+    },
+  });
+
+  const app = await startApp(repository, { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validPayload()),
+    });
+
+    assert.equal(response.status, 202);
+    const productionEvent = broadcasts.find((item) => item.event === 'production');
+    assert.ok(productionEvent);
+    assert.equal(productionEvent.data.action, 'reset');
+    assert.equal(productionEvent.data.totals.accumulatedProduced, 12430);
+  } finally {
+    await app.close();
+  }
+});

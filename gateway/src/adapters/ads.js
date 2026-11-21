@@ -40,6 +40,12 @@ function createAdsAdapter({
     });
 
     await client.connect();
+
+    // O projeto de origem carrega símbolos e tipos após conectar e também após
+    // reconectar. Evita consultar metadados a cada leitura e mantém o
+    // readValue() por nome funcionando se o runtime for reiniciado.
+    await client.cacheSymbols?.();
+    await client.cacheDataTypes?.();
   }
 
   async function readTags() {

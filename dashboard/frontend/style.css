@@ -256,7 +256,7 @@ button:hover {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -299,6 +299,15 @@ button:hover {
 
 .prod.accent strong {
   color: var(--accent);
+}
+
+.prod.saved {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.prod.saved strong {
+  color: var(--ok);
 }
 
 .chart-panel canvas {

@@ -39,6 +39,19 @@ CREATE TABLE IF NOT EXISTS production (
 CREATE INDEX IF NOT EXISTS idx_production_machine_time
     ON production (machine_id, recorded_at DESC);
 
+-- Acumulado que sobrevive ao reset dos contadores da linha. A tabela
+-- `production` continua guardando o histórico por amostra; aqui fica o total
+-- consolidado exibido no dashboard.
+CREATE TABLE IF NOT EXISTS production_totals (
+    machine_id           BIGINT PRIMARY KEY REFERENCES machines (id) ON DELETE CASCADE,
+    accumulated_produced BIGINT NOT NULL DEFAULT 0,
+    accumulated_good     BIGINT NOT NULL DEFAULT 0,
+    last_counter         BIGINT NOT NULL DEFAULT 0,
+    last_good_counter    BIGINT NOT NULL DEFAULT 0,
+    last_reset_at        TIMESTAMPTZ,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id          BIGSERIAL PRIMARY KEY,
     machine_id  BIGINT NOT NULL REFERENCES machines (id) ON DELETE CASCADE,

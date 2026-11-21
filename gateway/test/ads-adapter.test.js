@@ -13,6 +13,7 @@ function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
     constructor(options) {
       this.options = options;
       this.reads = [];
+      this.cacheCalls = [];
       this.connected = false;
       instance = this;
     }
@@ -21,6 +22,14 @@ function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
 
     async connect() {
       this.connected = true;
+    }
+
+    async cacheSymbols() {
+      this.cacheCalls.push('symbols');
+    }
+
+    async cacheDataTypes() {
+      this.cacheCalls.push('dataTypes');
     }
 
     async disconnect() {
@@ -89,6 +98,7 @@ test('readTags devolve escalares quando o ADS responde com objeto de leitura', a
     plcVersion: '1.0.0',
   });
   assert.deepEqual(fake.getInstance().reads, Object.values(symbols));
+  assert.deepEqual(fake.getInstance().cacheCalls, ['symbols', 'dataTypes']);
   assert.equal(fake.getInstance().options.targetAmsNetId, '39.90.64.65.1.1');
   assert.equal(fake.getInstance().options.targetAdsPort, 851);
 

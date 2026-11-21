@@ -565,3 +565,95 @@ Diferenciar o critério de uso por componente em
   (rolamento já em 80%, motor em 60%).
 - O reset ao concluir a OS zera `hours` para componentes de horas e `cycles`
   para os de ciclos.
+
+---
+
+# ADR-018 — Integração ADS com a Linha de Envase em somente leitura
+
+**Status:** Aceita
+
+**Contexto:**
+
+A Linha de Envase original expõe seus símbolos pelo TwinCAT/ADS. O gateway da
+PI40 precisa ler esse estado para refletir a operação real da linha. O projeto
+de origem também possui símbolos de comando (`bCmdStart`, `bCmdStop`,
+`bCmdReset`), que não fazem parte da responsabilidade da plataforma conforme a
+ADR-002.
+
+A conexão confirmada para o ensaio é `39.90.64.65.1.1:851`, com o gateway
+executando no mesmo host do TwinCAT. O `ads-client` devolve o resultado de
+`readValue()` como `{ value, rawValue, dataType, symbol }`; usar esse objeto
+diretamente zerava a telemetria no mapeamento da PI40.
+
+**Decisão:**
+
+- O adaptador ADS da PI40 apenas lê símbolos. Nenhum comando de start, stop ou
+  reset será escrito no CLP.
+- `readValue()` é desembrulhado: o gateway extrai `result.value` quando o retorno
+  for um objeto de leitura, mantendo compatibilidade com leituras escalares.
+- Após conectar (e após cada reconexão), o adaptador chama `cacheSymbols()` e
+  `cacheDataTypes()`, como no projeto de origem, para evitar consulta de
+  metadados a cada amostra.
+- O mapa de símbolos permanece em `gateway/plc.config.json`, com os nomes
+  originais `GVL_HMI.*`.
+- A telemetria gerada pelo gateway continua usando o contrato já validado de
+  `POST /api/telemetry`; nenhuma alteração de contrato é necessária no backend.
+- Qualquer mudança futura que permita escrita no CLP exige uma nova ADR que
+  revogue esta e a ADR-002.
+
+**Consequências:**
+
+- A PI40 não pode parar, iniciar ou reiniciar a linha; a operação permanece na
+  IHM original.
+- A causa raiz da telemetria zerada está eliminada, inclusive em leituras de
+  booleanos, contadores e versão do PLC.
+- A conexão real depende de rota ADS válida e do runtime do TwinCAT. Falta de
+  resposta deve ser tratada como **sem comunicação**, não como "linha parada".
+- O diagnóstico de símbolos pode ser feito sem publicar dados no backend.
+
+---
+
+# ADR-019 — Produção acumulada resistente ao reset da linha
+
+**Status:** Aceita
+
+**Contexto:**
+
+O usuário confirmou que, ao resetar a Linha de Envase, os contadores
+`nBottlesFilled`, `nBottlesCapped` e `nProductionTotal` voltam a zero. A PI40
+deve continuar exibindo o contador atual zerado, sem apagar a produção já
+registrada. O código anterior tratava queda de contador apenas como delta zero
+no OEE, no histórico por hora/turno e na manutenção, mas não mantinha um total
+acumulado explícito nem registrava o reset como evento.
+
+**Decisão:**
+
+- Criar a tabela `production_totals`, com `accumulated_produced`,
+  `accumulated_good`, `last_counter`, `last_good_counter`, `last_reset_at` e
+  `updated_at`, uma linha por máquina.
+- A cada amostra:
+  - se os contadores atuais forem maiores ou iguais aos anteriores, somar apenas
+    o delta ao acumulado;
+  - se qualquer contador diminuir, manter o acumulado, registrar `last_reset_at`
+    e emitir o evento `production.reset`;
+  - atualizar os últimos contadores para os valores atuais, mesmo após reset.
+- O histórico em `telemetry` e `production` permanece intacto. Nenhuma linha
+  antiga é apagada ou reescrita.
+- A API expõe `GET /api/machines/:id/production/total` e publica eventos SSE
+  `production` com `action: 'update' | 'reset'`.
+- O dashboard mostra o contador atual da linha e, separadamente, o **acumulado
+  no banco**; o reset é visível no título do card.
+- Volumes existentes aplicam `database/migrations/004_production_totals.sql`,
+  que inicializa o acumulado com o último contador conhecido do histórico.
+
+**Consequências:**
+
+- Reset da linha não zera a produção acumulada da PI40, nem distorce OEE,
+  histórico por hora/turno ou manutenção por ciclos.
+- A primeira amostra após um reset pode chegar com `0`; ela é aceita e passa a
+  ser a nova base dos deltas.
+- Como a tabela é por máquina e a ingestão usa `FOR UPDATE` na transação,
+  amostras concorrentes não perdem incrementos.
+- Eventos `production.reset` permitem montar, no futuro, um histórico de resets
+  sem consultar o payload bruto.
+- Esta decisão não altera o contrato de `POST /api/telemetry`.

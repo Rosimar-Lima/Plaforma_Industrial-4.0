@@ -57,6 +57,7 @@ const el = {
   filled: document.getElementById('prod-filled'),
   capped: document.getElementById('prod-capped'),
   total: document.getElementById('prod-total'),
+  accumulated: document.getElementById('prod-accumulated'),
   chart: document.getElementById('chart'),
   chartEmpty: document.getElementById('chart-empty'),
   chartSummary: document.getElementById('chart-summary'),
@@ -163,6 +164,7 @@ function renderPlaceholders() {
   el.filled.textContent = '0';
   el.capped.textContent = '0';
   el.total.textContent = '0';
+  el.accumulated.textContent = '0';
   el.lastUpdate.textContent = 'sem dados';
 }
 
@@ -191,6 +193,34 @@ function renderTelemetry(samples) {
   const ascending = [...samples].reverse();
   state.lastSamples = ascending;
   drawChart(ascending);
+}
+
+function renderProductionTotal(data) {
+  if (!data) {
+    el.accumulated.textContent = '0';
+    el.accumulated.title = '';
+    return;
+  }
+
+  el.accumulated.textContent = formatNumber(data.accumulatedProduced);
+  const resetAt = data.lastResetAt ? new Date(data.lastResetAt) : null;
+  el.accumulated.title = Number.isNaN(resetAt?.getTime())
+    ? ''
+    : `Último reset da linha: ${resetAt.toLocaleString('pt-BR')}`;
+}
+
+async function refreshProductionTotal() {
+  if (!state.machineId) {
+    renderProductionTotal(null);
+    return;
+  }
+
+  try {
+    const data = await getJson(`/api/machines/${state.machineId}/production/total`);
+    renderProductionTotal(data);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function formatLiters(value) {
@@ -766,6 +796,7 @@ function refreshAll() {
   void refreshAlerts();
   void refreshMaintenance();
   void refreshProduction();
+  void refreshProductionTotal();
 }
 
 async function loadMachines() {
@@ -787,6 +818,7 @@ async function loadMachines() {
       renderAlerts([]);
       renderMaintenance({ components: [], orders: [] });
       renderProduction({ buckets: [] });
+      renderProductionTotal(null);
       drawChart([]);
       state.pollOk = true;
       updateConnection();
@@ -903,6 +935,18 @@ function connectStream() {
     renderTelemetry(state.samples);
     state.streamOnline = true;
     updateConnection();
+  });
+
+  source.addEventListener('production', (event) => {
+    let payload;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (error) {
+      return;
+    }
+
+    if (!payload || payload.machineId !== state.machineCode) return;
+    renderProductionTotal(payload.totals);
   });
 
   source.addEventListener('alert', () => {

@@ -2,6 +2,7 @@
 
 const { computeOee } = require('./indicators');
 const { computeProductionBuckets } = require('./production');
+const { computeProductionTotal, toCounter } = require('./production-total');
 const {
   normalizeSettings,
   evaluateFillAlert,
@@ -431,6 +432,61 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     }
   }
 
+  // Acumulado separado do histórico: o reset da linha zera o contador atual,
+  // mas nunca apaga a produção já registrada no banco.
+  async function syncProductionTotals(client, machineId, record) {
+    const previousResult = await client.query(
+      `SELECT accumulated_produced, accumulated_good, last_counter,
+              last_good_counter, last_reset_at
+         FROM production_totals
+        WHERE machine_id = $1
+          FOR UPDATE`,
+      [machineId]
+    );
+    const previousRow = previousResult.rows[0];
+
+    const previous = previousRow
+      ? {
+          accumulatedProduced: previousRow.accumulated_produced,
+          accumulatedGood: previousRow.accumulated_good,
+          lastCounter: previousRow.last_counter,
+          lastGoodCounter: previousRow.last_good_counter,
+          lastResetAt: previousRow.last_reset_at,
+        }
+      : null;
+
+    const next = computeProductionTotal(previous, {
+      produced: record.production.filled,
+      good: record.production.total,
+      timestamp: record.timestamp,
+    });
+
+    await client.query(
+      `INSERT INTO production_totals
+         (machine_id, accumulated_produced, accumulated_good, last_counter,
+          last_good_counter, last_reset_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (machine_id) DO UPDATE
+          SET accumulated_produced = EXCLUDED.accumulated_produced,
+              accumulated_good = EXCLUDED.accumulated_good,
+              last_counter = EXCLUDED.last_counter,
+              last_good_counter = EXCLUDED.last_good_counter,
+              last_reset_at = EXCLUDED.last_reset_at,
+              updated_at = EXCLUDED.updated_at`,
+      [
+        machineId,
+        next.accumulatedProduced,
+        next.accumulatedGood,
+        next.lastCounter,
+        next.lastGoodCounter,
+        next.lastResetAt,
+        record.timestamp,
+      ]
+    );
+
+    return next;
+  }
+
   return {
     async ingestTelemetry(record) {
       const client = await pool.connect();
@@ -459,6 +515,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           [machineId, record.timestamp, record.production.filled, record.production.total]
         );
 
+        const productionTotal = await syncProductionTotals(client, machineId, record);
+
         const alerts = await syncAlerts(client, machineId, record);
         const maintenanceEvents = await syncMaintenance(client, machineId, record);
 
@@ -467,6 +525,12 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         return {
           machineId,
           recordedAt: record.timestamp,
+          productionReset: productionTotal.reset,
+          productionTotal: {
+            accumulatedProduced: productionTotal.accumulatedProduced,
+            accumulatedGood: productionTotal.accumulatedGood,
+            lastResetAt: productionTotal.lastResetAt,
+          },
           alerts: [...alerts, ...maintenanceEvents.alerts],
           maintenance: maintenanceEvents.orders,
         };
@@ -511,6 +575,27 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         values
       );
       return result.rows;
+    },
+
+    async getProductionTotal(machineId) {
+      const result = await pool.query(
+        `SELECT accumulated_produced, accumulated_good, last_counter,
+                last_good_counter, last_reset_at, updated_at
+           FROM production_totals
+          WHERE machine_id = $1`,
+        [machineId]
+      );
+      const row = result.rows[0] ?? {};
+
+      return {
+        machineId,
+        accumulatedProduced: toCounter(row.accumulated_produced),
+        accumulatedGood: toCounter(row.accumulated_good),
+        lastCounter: toCounter(row.last_counter),
+        lastGoodCounter: toCounter(row.last_good_counter),
+        lastResetAt: row.last_reset_at ?? null,
+        updatedAt: row.updated_at ?? null,
+      };
     },
 
     async getOee(machineId, { from, to, nominalCapacityPerHour = 400 } = {}) {
