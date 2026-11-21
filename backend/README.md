@@ -15,9 +15,13 @@ API responsável por ingestão de telemetria, cálculo de indicadores e consulta
 | `GET` | `/api/machines` | Lista as máquinas cadastradas. |
 | `GET` | `/api/machines/:id/telemetry` | Telemetria histórica da máquina. |
 | `GET` | `/api/machines/:id/oee` | Disponibilidade, performance, qualidade e OEE. |
+| `GET` | `/api/machines/:id/production` | Produção por hora ou turno. |
 | `GET` | `/api/stream` | Stream SSE de telemetria em tempo real. |
 | `GET` | `/api/machines/:id/alerts` | Alertas da máquina (`status=open\|all`). |
 | `POST` | `/api/alerts/:id/resolve` | Resolve um alerta aberto. |
+| `GET` | `/api/machines/:id/maintenance` | Vida útil dos componentes e OS ativas. |
+| `POST` | `/api/maintenance/orders/:id/complete` | Conclui uma OS e reseta o contador. |
+| `GET` | `/api/integrations/erp/outbox` | Eventos enviados ao ERP simulado. |
 
 `POST /api/telemetry` responde `202` quando a amostra é aceita e `400` com
 `details` quando o payload é inválido.
@@ -27,8 +31,16 @@ API responsável por ingestão de telemetria, cálculo de indicadores e consulta
 
 `GET /api/machines/:id/oee` aceita `from`, `to` (datas ISO) e
 `nominalCapacityPerHour` (padrão via `NOMINAL_CAPACITY_PER_HOUR`, `400`). Retorna
-`availability`, `performance`, `quality`, `oee` (0–1), `produced`, `good`,
+`availability`, `performance`, `quality`, `oee` (0-1), `produced`, `good`,
 `operatingTimeMs` e `plannedTimeMs`.
+
+`GET /api/machines/:id/production` aceita `from`, `to`, `bucket` (`hour` ou
+`shift`, padrão `hour`). Agrupa a produção no período e retorna, por intervalo,
+`produced`, `good`, `scrap`, `quality`, `operatingTimeMs`, `stoppedTimeMs`,
+`plannedTimeMs` e `availability`, além dos `totals`. O fuso da planta vem de
+`PLANT_TIMEZONE` (padrão `America/Sao_Paulo`) e os turnos de
+`SHIFT_START_HOUR`/`SHIFT_HOURS` (padrão `06:00`, `8` h). Períodos com mais de
+1000 intervalos são rejeitados com `range_too_large`.
 
 `GET /api/stream` mantém uma conexão `text/event-stream`, envia `event: ready`
 ao conectar e `event: telemetry` a cada amostra aceita em `POST /api/telemetry`.
@@ -70,9 +82,10 @@ npm start
 Variáveis: `HOST` (padrão `0.0.0.0`), `PORT`/`BACKEND_PORT` (padrão `3000`),
 `DATABASE_URL`, `NOMINAL_CAPACITY_PER_HOUR` (padrão `400`),
 `ALERT_FILL_PERCENT_MIN` (padrão `0`), `ALERT_FILL_PERCENT_MAX` (padrão `100`),
-`ALERT_STOPPED_MS` (padrão `60000`) e `DASHBOARD_DIR` (padrão
-`dashboard/frontend`). Para rodar fora do Docker, use um `DATABASE_URL`
-apontando para `localhost` (ex.:
+`ALERT_STOPPED_MS` (padrão `60000`), `PLANT_TIMEZONE` (padrão
+`America/Sao_Paulo`), `SHIFT_START_HOUR` (padrão `6`), `SHIFT_HOURS` (padrão
+`8`) e `DASHBOARD_DIR` (padrão `dashboard/frontend`). Para rodar fora do Docker,
+use um `DATABASE_URL` apontando para `localhost` (ex.:
 `postgresql://industrial:change-me@localhost:5432/industrial`).
 
 O backend também serve o dashboard estático na raiz (`/`), a partir de

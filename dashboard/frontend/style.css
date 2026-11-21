@@ -140,8 +140,9 @@ button:hover {
   grid-template-columns: 2fr 1fr;
   grid-template-areas:
     "main oee"
+    "production production"
     "maintenance maintenance";
-  grid-template-rows: minmax(min-content, 1fr) auto;
+  grid-template-rows: minmax(min-content, 1fr) auto auto;
   align-items: stretch;
 }
 
@@ -160,6 +161,59 @@ button:hover {
 
 .maintenance-panel {
   grid-area: maintenance;
+}
+
+.production-panel {
+  grid-area: production;
+}
+
+.panel-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.field.compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.field.compact select {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.production-table th.numeric,
+.production-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-table tr.current {
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.production-table .ratio.low {
+  color: var(--danger);
+}
+
+.production-table .ratio.mid {
+  color: var(--warn);
+}
+
+.production-table .ratio.high {
+  color: var(--ok);
+}
+
+.production-table .scrap {
+  color: var(--muted);
+}
+
+.production-table .scrap.positive {
+  color: var(--warn);
 }
 
 .alerts-panel {
@@ -561,6 +615,7 @@ button:hover {
     grid-template-areas:
       "main"
       "oee"
+      "production"
       "maintenance";
     grid-template-rows: auto;
   }

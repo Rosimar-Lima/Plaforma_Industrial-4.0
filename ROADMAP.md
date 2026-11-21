@@ -36,10 +36,10 @@ Objetivo:
 Transformar dados brutos em informação.
 
 - [x] Produção total
-- [ ] Produção por hora
-- [ ] Produção por turno
-- [ ] Tempo operando
-- [ ] Tempo parado
+- [x] Produção por hora
+- [x] Produção por turno
+- [x] Tempo operando
+- [x] Tempo parado
 - [x] Disponibilidade
 - [x] Performance
 - [x] Qualidade
@@ -58,7 +58,7 @@ Visualização operacional em tempo real.
 
 - [x] Dashboard Web
 - [x] Visão por máquina
-- [ ] Histórico de produção
+- [x] Histórico de produção
 - [x] Filtros de período
 - [x] Indicadores em tempo real
 - [ ] Painel consolidado de OEE

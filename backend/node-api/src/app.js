@@ -3,6 +3,12 @@
 const express = require('express');
 const { validateTelemetry } = require('./validation');
 const { createStreamHub } = require('./stream');
+const {
+  DEFAULT_SHIFT_HOURS,
+  DEFAULT_SHIFT_START_HOUR,
+  DEFAULT_TIME_ZONE,
+  MAX_BUCKETS,
+} = require('./production');
 
 function parseLimit(value, { fallback = 100, max = 1000 } = {}) {
   if (value === undefined || value === '') return fallback;
@@ -23,6 +29,11 @@ function createApp({
   telemetryLimit = '100kb',
   nominalCapacityPerHour = 400,
   dashboardDir = null,
+  productionSettings = {
+    timeZone: DEFAULT_TIME_ZONE,
+    shiftStartHour: DEFAULT_SHIFT_START_HOUR,
+    shiftHours: DEFAULT_SHIFT_HOURS,
+  },
   streamHub = createStreamHub(),
 } = {}) {
   if (!repository) {
@@ -152,6 +163,53 @@ function createApp({
     }
   });
 
+  app.get('/api/machines/:id/production', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    const bucket = req.query.bucket ?? 'hour';
+    if (!['hour', 'shift'].includes(bucket)) {
+      res.status(400).json({ error: 'invalid_bucket' });
+      return;
+    }
+
+    const from = parseDate(req.query.from);
+    const to = parseDate(req.query.to);
+    if ((req.query.from && from === null) || (req.query.to && to === null)) {
+      res.status(400).json({ error: 'invalid_period' });
+      return;
+    }
+
+    const toMs = to ? Date.parse(to) : Date.now();
+    const fromMs = from ? Date.parse(from) : toMs - 24 * 3600000;
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs >= toMs) {
+      res.status(400).json({ error: 'invalid_period' });
+      return;
+    }
+
+    const bucketHours = bucket === 'hour' ? 1 : productionSettings.shiftHours;
+    if (Math.ceil((toMs - fromMs) / 3600000 / bucketHours) > MAX_BUCKETS) {
+      res.status(400).json({ error: 'range_too_large' });
+      return;
+    }
+
+    try {
+      const history = await repository.getProductionHistory(machineId, {
+        from: new Date(fromMs).toISOString(),
+        to: new Date(toMs).toISOString(),
+        bucket,
+        ...productionSettings,
+        now: toMs,
+      });
+      res.json({ machineId, ...history });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/machines/:id/alerts', async (req, res, next) => {
     const machineId = Number(req.params.id);
     if (!Number.isInteger(machineId) || machineId < 1) {
@@ -276,6 +334,11 @@ function createApp({
   app.use((error, req, res, next) => {
     if (res.headersSent) {
       next(error);
+      return;
+    }
+
+    if (error instanceof RangeError) {
+      res.status(400).json({ error: 'range_too_large' });
       return;
     }
 

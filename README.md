@@ -58,6 +58,14 @@ Endpoints: `GET /api/machines/:id/maintenance`,
 `POST /api/maintenance/orders/:id/complete` e
 `GET /api/integrations/erp/outbox`.
 
+O histórico de produção agrupa os contadores por hora cheia ou por turno da
+planta em `GET /api/machines/:id/production?bucket=hour|shift`. Cada intervalo
+traz peças produzidas, boas, refugo, tempo operando, tempo parado e
+disponibilidade; o painel "Produção por período" no dashboard usa o mesmo
+endpoint. Fuso e turnos são configurados por `PLANT_TIMEZONE`,
+`SHIFT_START_HOUR` e `SHIFT_HOURS` (padrão: `America/Sao_Paulo`, turnos de 8 h
+a partir das 06:00).
+
 Para usar um PLC real, o `gateway/` lê ADS, OPC-UA ou Modbus TCP e publica na
 mesma API. O adaptador `simulator` permite testar o gateway sem hardware:
 

@@ -46,3 +46,5 @@ uma linha de envase industrial.
 - Dashboard: servido pelo backend em `http://localhost:3000/` (HTML/CSS/JS sem build).
 - Tempo real: SSE em `GET /api/stream` (o dashboard usa SSE com fallback para polling).
 - Alertas: avaliados na ingestão (limites de envase + linha parada); `GET /api/machines/:id/alerts` e `POST /api/alerts/:id/resolve`.
+- Produção por hora/turno: `GET /api/machines/:id/production?bucket=hour|shift` (fuso e turnos em `PLANT_TIMEZONE`, `SHIFT_START_HOUR`, `SHIFT_HOURS`).
+- Smoke test (com o ambiente no ar): `node scripts/smoke-test.js`.

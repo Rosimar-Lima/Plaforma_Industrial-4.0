@@ -364,3 +364,39 @@ Modelar manutenção preventiva a partir dos contadores de produção já ingeri
 - A troca da outbox simulada por um ERP real fica isolada em
   `erp_outbox`/webhook.
 - A manutenção é preventiva (baseada em uso), não preditiva.
+
+---
+
+# ADR-013 — Histórico de produção por hora/turno com fuso da planta
+
+**Status:** Aceita
+
+**Contexto:**
+
+As fases 2 e 3 exigem produção por hora e por turno, tempo operando/parado e
+histórico no dashboard. As amostras são gravadas em UTC, mas a planta opera em
+fuso local e os turnos precisam de limites estáveis e configuráveis.
+
+**Decisão:**
+
+Calcular os intervalos em `backend/node-api/src/production.js` a partir das
+amostras já persistidas:
+
+- agrupamento por hora cheia ou por turno (`bucket=hour|shift`);
+- fuso em `PLANT_TIMEZONE` (padrão `America/Sao_Paulo`) e turnos em
+  `SHIFT_START_HOUR`/`SHIFT_HOURS` (padrão 06:00, 8 h);
+- a produção do intervalo é atribuída ao bucket da amostra final; contadores
+  que diminuem são tratados como reset (zero);
+- tempo operando = sobreposição dos intervalos com `line.running = true`,
+  limitada à janela pedida; o restante é tempo parado;
+- endpoint `GET /api/machines/:id/production` e painel "Produção por período"
+  no dashboard, atualizado a cada 15 s.
+
+**Consequências:**
+
+- Nenhuma tabela nova: o histórico é derivado da telemetria existente.
+- Consultas longas são limitadas a 1000 intervalos (`range_too_large`).
+- O cálculo usa o fuso da planta, não o do navegador.
+- Períodos sem telemetria aparecem como tempo parado; uma queda longa do
+  backend pode inflar esse tempo, o que é aceitável no MVP e deve ser
+  observado em produção.

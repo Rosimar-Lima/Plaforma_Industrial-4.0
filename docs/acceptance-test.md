@@ -63,6 +63,7 @@ O script não tem dependências e valida:
 | `POST /api/telemetry` válido | `202` e amostra persistida |
 | `POST /api/telemetry` inválido | `400` com erro de intertravamento EV |
 | `GET /api/machines/:id/oee` | `200` com indicadores entre 0 e 1 |
+| `GET /api/machines/:id/production` | `200` com intervalos e totais |
 | `GET /api/machines/:id/alerts` | `200` com histórico |
 | `GET /api/machines/:id/maintenance` | `200` com componentes e OS |
 | `GET /api/integrations/erp/outbox` | `200` com eventos |
@@ -70,7 +71,7 @@ O script não tem dependências e valida:
 | `GET /api/stream` | evento `ready` recebido |
 
 **Esperado:** todas as verificações `OK` e saída final
-`11/11 verificações OK`. O código de saída é `0` em sucesso e `1` em falha,
+`12/12 verificações OK`. O código de saída é `0` em sucesso e `1` em falha,
 permitindo uso em CI.
 
 > O smoke test grava uma amostra de telemetria por execução. Isso é intencional:
@@ -90,14 +91,20 @@ Execute os cenários na ordem. Cada um tem passos e resultado esperado.
 gráfico mudando sem recarregar a página. Se o SSE cair, o selo passa para
 `Polling` e o dashboard continua atualizando a cada 3 s.
 
-### AT-02 — OEE e filtros de período
+### AT-02 — OEE, histórico de produção e filtros de período
 
 1. Selecione um período no filtro (por exemplo, últimas 24 h).
 2. Compare os valores de disponibilidade, performance, qualidade e OEE.
+3. No painel **Produção por período**, alterne o agrupamento entre **Hora** e
+   **Turno** e confira a tabela.
+4. Compare o total produzido do painel com o campo **Produzidas** do OEE.
 
 **Esperado:** valores percentuais entre 0% e 100%; OEE = disponibilidade ×
 performance × qualidade (dentro do arredondamento); o gráfico respeita o período
-selecionado.
+selecionado. A tabela mostra um intervalo por hora ou por turno (turnos de 8 h
+a partir das 06:00, fuso `America/Sao_Paulo`), com produzidas, boas, refugo,
+tempo operando, tempo parado e disponibilidade. A soma dos intervalos coincide
+com o total do OEE, e o intervalo atual aparece destacado.
 
 ### AT-03 — Ingestão inválida é rejeitada
 
@@ -272,8 +279,9 @@ AT-07, AT-08, AT-09 e AT-10 são complementares.
   ainda não foram testados com PLC real.
 - Sem autenticação, TLS, backup automático ou observabilidade.
 - O schema é aplicado na criação do volume; não há migrações versionadas.
-- Produção por hora/turno, tempo parado explícito e painel consolidado de OEE
-  ainda não existem.
+- Painel consolidado de OEE multi-máquina ainda não existe.
+- O histórico de produção deriva o tempo parado da ausência de amostras em
+  operação; quedas longas do backend podem inflar esse tempo.
 - A manutenção é preventiva por uso (contadores), não preditiva.
 
 ## 8. Como reportar problemas

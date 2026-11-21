@@ -32,12 +32,14 @@ function createFakeRepository() {
   const calls = [];
   const telemetryCalls = [];
   const oeeCalls = [];
+  const productionCalls = [];
   const alertsCalls = [];
   const resolveCalls = [];
   return {
     calls,
     telemetryCalls,
     oeeCalls,
+    productionCalls,
     alertsCalls,
     resolveCalls,
     async ingestTelemetry(record) {
@@ -63,6 +65,42 @@ function createFakeRepository() {
         operatingTimeMs: 3600000,
         plannedTimeMs: 7200000,
         nominalCapacityPerHour: options.nominalCapacityPerHour,
+      };
+    },
+    async getProductionHistory(machineId, options) {
+      productionCalls.push({ machineId, options });
+      return {
+        bucket: options.bucket,
+        timeZone: options.timeZone,
+        shiftStartHour: options.shiftStartHour,
+        shiftHours: options.shiftHours,
+        from: options.from,
+        to: options.to,
+        totals: {
+          produced: 120,
+          good: 118,
+          scrap: 2,
+          quality: 0.9833,
+          operatingTimeMs: 3600000,
+          stoppedTimeMs: 0,
+          plannedTimeMs: 3600000,
+          availability: 1,
+        },
+        buckets: [
+          {
+            start: '2026-01-01T12:00:00.000Z',
+            end: '2026-01-01T13:00:00.000Z',
+            label: '09:00',
+            produced: 120,
+            good: 118,
+            scrap: 2,
+            quality: 0.9833,
+            operatingTimeMs: 3600000,
+            stoppedTimeMs: 0,
+            plannedTimeMs: 3600000,
+            availability: 1,
+          },
+        ],
       };
     },
     async listAlerts(machineId, options) {
@@ -528,6 +566,7 @@ test('GET / serve o dashboard estático', async () => {
     assert.ok(html.includes('Plataforma Industrial 4.0'));
     assert.ok(html.includes('alerts-list'));
     assert.ok(html.includes('maintenance-panel'));
+    assert.ok(html.includes('production-panel'));
   } finally {
     await app.close();
   }
@@ -675,6 +714,107 @@ test('GET /api/machines/:id/oee valida id, período e capacidade', async () => {
     );
     assert.equal(invalidCapacity.status, 400);
     assert.equal((await invalidCapacity.json()).error, 'invalid_nominal_capacity');
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/production retorna histórico por hora', async () => {
+  const repository = createFakeRepository();
+  const app = await startApp(repository);
+
+  try {
+    const response = await fetch(
+      `${app.baseUrl}/api/machines/1/production?bucket=hour` +
+        `&from=2026-01-01T00:00:00.000Z&to=2026-01-01T03:00:00.000Z`
+    );
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.machineId, 1);
+    assert.equal(body.bucket, 'hour');
+    assert.equal(body.buckets.length, 1);
+    assert.equal(body.buckets[0].label, '09:00');
+    assert.equal(body.totals.produced, 120);
+    assert.deepEqual(repository.productionCalls[0], {
+      machineId: 1,
+      options: {
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-01-01T03:00:00.000Z',
+        bucket: 'hour',
+        timeZone: 'America/Sao_Paulo',
+        shiftStartHour: 6,
+        shiftHours: 8,
+        now: Date.parse('2026-01-01T03:00:00.000Z'),
+      },
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/production aceita turnos configurados', async () => {
+  const repository = createFakeRepository();
+  const app = await startApp(repository, {
+    productionSettings: { timeZone: 'UTC', shiftStartHour: 7, shiftHours: 12 },
+  });
+
+  try {
+    const response = await fetch(
+      `${app.baseUrl}/api/machines/1/production?bucket=shift` +
+        `&from=2026-01-01T06:00:00.000Z&to=2026-01-01T18:00:00.000Z`
+    );
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.bucket, 'shift');
+    assert.deepEqual(repository.productionCalls[0].options, {
+      from: '2026-01-01T06:00:00.000Z',
+      to: '2026-01-01T18:00:00.000Z',
+      bucket: 'shift',
+      timeZone: 'UTC',
+      shiftStartHour: 7,
+      shiftHours: 12,
+      now: Date.parse('2026-01-01T18:00:00.000Z'),
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/production valida id, bucket, período e intervalo', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const invalidId = await fetch(`${app.baseUrl}/api/machines/abc/production`);
+    assert.equal(invalidId.status, 400);
+    assert.equal((await invalidId.json()).error, 'invalid_machine_id');
+
+    const invalidBucket = await fetch(
+      `${app.baseUrl}/api/machines/1/production?bucket=day`
+    );
+    assert.equal(invalidBucket.status, 400);
+    assert.equal((await invalidBucket.json()).error, 'invalid_bucket');
+
+    const invalidPeriod = await fetch(
+      `${app.baseUrl}/api/machines/1/production?to=ontem`
+    );
+    assert.equal(invalidPeriod.status, 400);
+    assert.equal((await invalidPeriod.json()).error, 'invalid_period');
+
+    const inverted = await fetch(
+      `${app.baseUrl}/api/machines/1/production` +
+        `?from=2026-01-01T02:00:00.000Z&to=2026-01-01T01:00:00.000Z`
+    );
+    assert.equal(inverted.status, 400);
+    assert.equal((await inverted.json()).error, 'invalid_period');
+
+    const tooLarge = await fetch(
+      `${app.baseUrl}/api/machines/1/production` +
+        `?from=2026-01-01T00:00:00.000Z&to=2026-03-01T00:00:00.000Z`
+    );
+    assert.equal(tooLarge.status, 400);
+    assert.equal((await tooLarge.json()).error, 'range_too_large');
   } finally {
     await app.close();
   }

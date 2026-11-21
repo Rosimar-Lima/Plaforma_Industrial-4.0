@@ -4,6 +4,7 @@ const POLL_TELEMETRY_MS = 3000;
 const POLL_OEE_MS = 15000;
 const POLL_ALERTS_MS = 15000;
 const POLL_MAINTENANCE_MS = 15000;
+const POLL_PRODUCTION_MS = 15000;
 const TELEMETRY_LIMIT = 120;
 
 const SEVERITY_LABELS = {
@@ -32,6 +33,7 @@ const state = {
   machineId: null,
   machineCode: null,
   periodMinutes: 60,
+  productionBucket: 'hour',
   samples: [],
   lastSamples: [],
   alerts: [],
@@ -65,6 +67,10 @@ const el = {
   good: document.getElementById('oee-good'),
   operating: document.getElementById('oee-operating'),
   capacity: document.getElementById('oee-capacity'),
+  productionBucket: document.getElementById('production-bucket'),
+  productionSummary: document.getElementById('production-summary'),
+  productionBody: document.getElementById('production-body'),
+  productionEmpty: document.getElementById('production-empty'),
   alertsList: document.getElementById('alerts-list'),
   alertsCount: document.getElementById('alerts-count'),
   alertsEmpty: document.getElementById('alerts-empty'),
@@ -259,6 +265,91 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function ratioClass(ratio) {
+  const value = Number(ratio);
+  if (!Number.isFinite(value)) return '';
+  if (value >= 0.85) return 'high';
+  if (value >= 0.6) return 'mid';
+  return 'low';
+}
+
+function renderProduction(data) {
+  const buckets = data?.buckets ?? [];
+  const totals = data?.totals ?? null;
+
+  el.productionBody.innerHTML = '';
+  el.productionEmpty.style.display = buckets.length === 0 ? 'block' : 'none';
+
+  if (!totals || totals.plannedTimeMs === 0) {
+    el.productionSummary.textContent = '—';
+  } else {
+    el.productionSummary.textContent =
+      `${formatNumber(totals.produced)} peças · ` +
+      `${formatPercent(totals.availability)} disponibilidade · ` +
+      `${formatPercent(totals.quality)} qualidade`;
+  }
+
+  const now = Date.now();
+  buckets.forEach((bucket, index) => {
+    const row = document.createElement('tr');
+    if (index === buckets.length - 1 && new Date(bucket.end).getTime() > now) {
+      row.className = 'current';
+    }
+
+    const period = document.createElement('td');
+    period.textContent = bucket.label;
+
+    const produced = document.createElement('td');
+    produced.className = 'numeric';
+    produced.textContent = formatNumber(bucket.produced);
+
+    const good = document.createElement('td');
+    good.className = 'numeric';
+    good.textContent = formatNumber(bucket.good);
+
+    const scrap = document.createElement('td');
+    scrap.className = `numeric scrap${bucket.scrap > 0 ? ' positive' : ''}`;
+    scrap.textContent = formatNumber(bucket.scrap);
+
+    const operating = document.createElement('td');
+    operating.className = 'numeric';
+    operating.textContent = formatDuration(bucket.operatingTimeMs);
+
+    const stopped = document.createElement('td');
+    stopped.className = 'numeric';
+    stopped.textContent = formatDuration(bucket.stoppedTimeMs);
+
+    const availability = document.createElement('td');
+    availability.className = `numeric ratio ${ratioClass(bucket.availability)}`;
+    availability.textContent = formatPercent(bucket.availability);
+
+    row.append(period, produced, good, scrap, operating, stopped, availability);
+    el.productionBody.append(row);
+  });
+}
+
+async function refreshProduction() {
+  if (!state.machineId) {
+    renderProduction({ buckets: [] });
+    return;
+  }
+
+  const to = new Date();
+  const from = new Date(to.getTime() - state.periodMinutes * 60000);
+  const params = new URLSearchParams({
+    from: from.toISOString(),
+    to: to.toISOString(),
+    bucket: state.productionBucket,
+  });
+
+  try {
+    const data = await getJson(`/api/machines/${state.machineId}/production?${params}`);
+    renderProduction(data);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function renderAlerts(alerts) {
@@ -489,6 +580,7 @@ function refreshAll() {
   void refreshOee();
   void refreshAlerts();
   void refreshMaintenance();
+  void refreshProduction();
 }
 
 async function loadMachines() {
@@ -509,6 +601,7 @@ async function loadMachines() {
       renderOee({ nominalCapacityPerHour: 0 });
       renderAlerts([]);
       renderMaintenance({ components: [], orders: [] });
+      renderProduction({ buckets: [] });
       drawChart([]);
       state.pollOk = true;
       updateConnection();
@@ -549,6 +642,12 @@ el.machineSelect.addEventListener('change', () => {
 el.periodSelect.addEventListener('change', () => {
   state.periodMinutes = Number(el.periodSelect.value) || 60;
   void refreshOee();
+  void refreshProduction();
+});
+
+el.productionBucket.addEventListener('change', () => {
+  state.productionBucket = el.productionBucket.value === 'shift' ? 'shift' : 'hour';
+  void refreshProduction();
 });
 
 el.refresh.addEventListener('click', () => {
@@ -644,6 +743,10 @@ async function start() {
   setInterval(() => {
     if (state.machineId) void refreshMaintenance();
   }, POLL_MAINTENANCE_MS);
+
+  setInterval(() => {
+    if (state.machineId) void refreshProduction();
+  }, POLL_PRODUCTION_MS);
 }
 
 void start();

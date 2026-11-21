@@ -171,6 +171,17 @@ async function main() {
       return `OEE ${(res.json.oee * 100).toFixed(1)}%`;
     });
 
+    await run(`GET /api/machines/${machine.id}/production`, async () => {
+      const res = await api(`/api/machines/${machine.id}/production?bucket=hour`);
+      assert(res.status === 200, `status ${res.status}`);
+      assert(Array.isArray(res.json?.buckets), 'campo buckets ausente');
+      assert(
+        typeof res.json?.totals?.produced === 'number',
+        'totals.produced ausente'
+      );
+      return `${res.json.buckets.length} intervalo(s), ${res.json.totals.produced} peça(s)`;
+    });
+
     await run(`GET /api/machines/${machine.id}/alerts`, async () => {
       const res = await api(`/api/machines/${machine.id}/alerts?status=all&limit=5`);
       assert(res.status === 200, `status ${res.status}`);

@@ -26,7 +26,10 @@ Abra `http://localhost:3000` (ou o `PORT` configurado).
 - Gráfico do nível de envase das últimas amostras.
 - Cartões de OEE, disponibilidade, performance e qualidade com filtro de período
   (15 min, 1 h, 6 h, 24 h).
+- Histórico de produção por hora ou turno, com produzidas, boas, refugo, tempo
+  operando, tempo parado e disponibilidade.
 - Painel de alertas abertos, com severidade, horário e ação para resolver.
+- Manutenção preventiva: vida útil dos componentes, OS ativas e conclusão.
 
 ## Atualização
 
@@ -34,8 +37,12 @@ Abra `http://localhost:3000` (ou o `PORT` configurado).
   disponível, há fallback para polling a cada 3 s em
   `/api/machines/:id/telemetry`.
 - Indicadores: polling a cada 15 s em `/api/machines/:id/oee`.
+- Histórico de produção: polling a cada 15 s em
+  `/api/machines/:id/production`, respeitando o período e o agrupamento
+  selecionados.
 - Alertas: eventos `alert` no SSE; a lista aberta também é reconsultada a cada
   15 s como garantia.
+- Manutenção: eventos `maintenance` no SSE e reconsulta a cada 15 s.
 - O indicador de conexão mostra `Tempo real`, `Polling` ou `Offline`.
 
 O contrato consumido está documentado em

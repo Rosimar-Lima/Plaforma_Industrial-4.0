@@ -144,6 +144,44 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/machines/{id}/production:
+    get:
+      tags: [Indicadores]
+      summary: Histórico de produção por hora ou turno
+      description: |
+        Agrupa a produção no período por hora cheia ou por turno da planta.
+        O tempo operando é calculado entre amostras com `line.running = true`;
+        o restante do período é contabilizado como tempo parado. Os limites dos
+        turnos são configurados por `PLANT_TIMEZONE`, `SHIFT_START_HOUR` e
+        `SHIFT_HOURS`.
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: bucket
+          in: query
+          required: false
+          description: Agrupamento dos intervalos
+          schema:
+            type: string
+            enum: [hour, shift]
+            default: hour
+      responses:
+        '200':
+          description: Produção agrupada por intervalo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionHistory'
+        '400':
+          description: Parâmetros inválidos ou período muito longo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/stream:
     get:
       tags: [Tempo real]
@@ -586,6 +624,95 @@ components:
           type: integer
         nominalCapacityPerHour:
           type: number
+
+    ProductionBucket:
+      type: object
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        label:
+          type: string
+          example: "09:00"
+        produced:
+          type: integer
+        good:
+          type: integer
+        scrap:
+          type: integer
+        quality:
+          type: number
+          minimum: 0
+          maximum: 1
+        operatingTimeMs:
+          type: integer
+        stoppedTimeMs:
+          type: integer
+        plannedTimeMs:
+          type: integer
+        availability:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    ProductionTotals:
+      type: object
+      properties:
+        produced:
+          type: integer
+        good:
+          type: integer
+        scrap:
+          type: integer
+        quality:
+          type: number
+          minimum: 0
+          maximum: 1
+        operatingTimeMs:
+          type: integer
+        stoppedTimeMs:
+          type: integer
+        plannedTimeMs:
+          type: integer
+        availability:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    ProductionHistory:
+      type: object
+      properties:
+        machineId:
+          type: integer
+        bucket:
+          type: string
+          enum: [hour, shift]
+        timeZone:
+          type: string
+          example: America/Sao_Paulo
+        shiftStartHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        shiftHours:
+          type: integer
+          minimum: 1
+          maximum: 24
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        totals:
+          $ref: '#/components/schemas/ProductionTotals'
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductionBucket'
 
     MaintenancePart:
       type: object

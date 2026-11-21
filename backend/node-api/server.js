@@ -20,6 +20,7 @@ const app = createApp({
   repository,
   nominalCapacityPerHour: config.nominalCapacityPerHour,
   dashboardDir: config.dashboardDir,
+  productionSettings: config.productionSettings,
 });
 
 const server = app.listen(config.port, config.host, () => {

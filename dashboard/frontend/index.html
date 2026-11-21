@@ -115,6 +115,39 @@
         </dl>
       </section>
 
+      <section class="panel production-panel">
+        <div class="panel-head">
+          <h2>Produção por período</h2>
+          <div class="panel-tools">
+            <label class="field compact">
+              <span>Agrupar</span>
+              <select id="production-bucket">
+                <option value="hour" selected>Hora</option>
+                <option value="shift">Turno</option>
+              </select>
+            </label>
+            <span id="production-summary" class="muted">—</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="orders-table production-table">
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th class="numeric">Produzidas</th>
+                <th class="numeric">Boas</th>
+                <th class="numeric">Refugo</th>
+                <th class="numeric">Operando</th>
+                <th class="numeric">Parada</th>
+                <th class="numeric">Disponibilidade</th>
+              </tr>
+            </thead>
+            <tbody id="production-body"></tbody>
+          </table>
+        </div>
+        <p id="production-empty" class="empty">Sem dados no período.</p>
+      </section>
+
       <section class="panel maintenance-panel">
         <div class="panel-head">
           <h2>Manutenção preventiva</h2>
@@ -147,7 +180,7 @@
     </main>
 
     <footer class="footer">
-      Atualização automática a cada 3 s · indicadores a cada 15 s · alertas em tempo real
+      Atualização automática a cada 3 s · indicadores e histórico a cada 15 s · alertas em tempo real
     </footer>
 
     <script src="./app.js"></script>

@@ -1,6 +1,7 @@
 'use strict';
 
 const { computeOee } = require('./indicators');
+const { computeProductionBuckets } = require('./production');
 const {
   normalizeSettings,
   evaluateFillAlert,
@@ -423,6 +424,59 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       );
 
       return computeOee(result.rows, { nominalCapacityPerHour });
+    },
+
+    async getProductionHistory(
+      machineId,
+      { from, to, bucket = 'hour', timeZone, shiftStartHour, shiftHours, now } = {}
+    ) {
+      const columns = `recorded_at,
+              COALESCE((payload->'line'->>'running')::boolean, false) AS running,
+              COALESCE((payload->'production'->>'filled')::integer, 0) AS produced,
+              COALESCE((payload->'production'->>'total')::integer, 0) AS good`;
+
+      const conditions = ['machine_id = $1'];
+      const values = [machineId];
+
+      if (from) {
+        values.push(from);
+        conditions.push(`recorded_at >= $${values.length}`);
+      }
+      if (to) {
+        values.push(to);
+        conditions.push(`recorded_at <= $${values.length}`);
+      }
+
+      const baseline = from
+        ? (
+            await pool.query(
+              `SELECT ${columns}
+               FROM telemetry
+               WHERE machine_id = $1 AND recorded_at < $2
+               ORDER BY recorded_at DESC
+               LIMIT 1`,
+              [machineId, from]
+            )
+          ).rows
+        : [];
+
+      const result = await pool.query(
+        `SELECT ${columns}
+         FROM telemetry
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY recorded_at ASC`,
+        values
+      );
+
+      return computeProductionBuckets([...baseline, ...result.rows], {
+        from,
+        to,
+        bucket,
+        timeZone,
+        shiftStartHour,
+        shiftHours,
+        now,
+      });
     },
 
     async listAlerts(machineId, { status = 'open', limit = 20 } = {}) {
