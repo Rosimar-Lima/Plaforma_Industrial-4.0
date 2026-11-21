@@ -2,17 +2,28 @@
 
 const { requireOptional } = require('../optional');
 
+// O ads-client devolve { value, rawValue, dataType, symbol } em readValue().
+// Telemetria com esse objeto inteiro viraria false/0 no mapeamento.
+function unwrapAdsValue(result) {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+
+  return Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result;
+}
+
 function createAdsAdapter({
   targetAmsNetId,
   targetAdsPort,
   timeoutMs = 5000,
   autoReconnect = true,
   symbols = {},
+  clientFactory = null,
 } = {}) {
   let client = null;
 
   async function connect() {
-    const { Client } = requireOptional('ads-client');
+    const Client = clientFactory ?? requireOptional('ads-client').Client;
 
     client = new Client({
       targetAmsNetId,
@@ -37,7 +48,7 @@ function createAdsAdapter({
     const values = {};
     for (const [key, symbol] of Object.entries(symbols)) {
       if (!symbol) continue;
-      values[key] = await client.readValue(symbol);
+      values[key] = unwrapAdsValue(await client.readValue(symbol));
     }
     return values;
   }
@@ -53,4 +64,5 @@ function createAdsAdapter({
 
 module.exports = {
   createAdsAdapter,
+  unwrapAdsValue,
 };
