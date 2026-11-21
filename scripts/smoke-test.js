@@ -206,6 +206,15 @@ async function main() {
     });
   }
 
+  for (const action of ['send', 'cancel']) {
+    await run(`POST /api/maintenance/orders/:id/${action} (id inválido)`, async () => {
+      const res = await api(`/api/maintenance/orders/abc/${action}`, { method: 'POST' });
+      assert(res.status === 400, `status ${res.status}`);
+      assert(res.json?.error === 'invalid_maintenance_order_id', 'erro inesperado');
+      return 'rota disponível, id inválido rejeitado';
+    });
+  }
+
   await run('GET /api/integrations/sap/outbox', async () => {
     const res = await api('/api/integrations/sap/outbox?limit=5');
     assert(res.status === 200, `status ${res.status}`);

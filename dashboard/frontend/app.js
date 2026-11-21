@@ -22,6 +22,7 @@ const MAINTENANCE_STATUS_LABELS = {
   open: 'Aberta',
   in_progress: 'Em execução',
   completed: 'Concluída',
+  cancelled: 'Cancelada',
 };
 
 const PRIORITY_LABELS = {
@@ -38,6 +39,9 @@ const state = {
   samples: [],
   lastSamples: [],
   alerts: [],
+  orders: [],
+  maintenanceNames: new Map(),
+  selectedOrderId: null,
   stream: null,
   streamOnline: false,
   pollOk: false,
@@ -81,6 +85,13 @@ const el = {
   maintenanceEmpty: document.getElementById('maintenance-empty'),
   maintenanceOrdersBody: document.getElementById('maintenance-orders-body'),
   maintenanceOrdersEmpty: document.getElementById('maintenance-orders-empty'),
+  orderModal: document.getElementById('order-modal'),
+  orderModalTitle: document.getElementById('order-modal-title'),
+  orderModalBody: document.getElementById('order-modal-body'),
+  orderModalClose: document.getElementById('order-modal-close'),
+  orderModalDismiss: document.getElementById('order-modal-dismiss'),
+  orderSend: document.getElementById('order-send'),
+  orderCancel: document.getElementById('order-cancel'),
 };
 
 async function getJson(url) {
@@ -312,6 +323,7 @@ function renderOee(data) {
 }
 
 function formatDateTime(value) {
+  if (value === null || value === undefined || value === '') return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString('pt-BR', {
@@ -484,7 +496,13 @@ function renderMaintenanceOrders(orders, names) {
     const row = document.createElement('tr');
 
     const idCell = document.createElement('td');
-    idCell.textContent = `#${order.id}`;
+    const idButton = document.createElement('button');
+    idButton.type = 'button';
+    idButton.className = 'order-link';
+    idButton.dataset.id = String(order.id);
+    idButton.textContent = `#${order.id}`;
+    idButton.setAttribute('aria-label', `Abrir ordem de serviço ${order.id}`);
+    idCell.append(idButton);
 
     const componentCell = document.createElement('td');
     componentCell.textContent = names.get(order.component_code) ?? order.component_code;
@@ -519,10 +537,111 @@ function renderMaintenanceOrders(orders, names) {
   }
 }
 
+function modalRow(label, value) {
+  const row = document.createElement('div');
+  row.className = 'modal-row';
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'modal-label';
+  labelEl.textContent = label;
+
+  const valueEl = document.createElement('span');
+  valueEl.className = 'modal-value';
+  valueEl.textContent = value === null || value === undefined || value === '' ? '—' : value;
+
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function renderOrderModal(order) {
+  const name = state.maintenanceNames.get(order.component_code) ?? order.component_code;
+  const parts = order.parts ?? [];
+  const partsText = parts.length
+    ? parts
+        .map(
+          (part) =>
+            `${part.quantity || 1}x ${part.code}${part.name ? ` — ${part.name}` : ''}` +
+            ` (${part.status ?? 'reservado'})`
+        )
+        .join('\n')
+    : 'Nenhuma peça reservada';
+
+  el.orderModalTitle.textContent = `Ordem de serviço #${order.id}`;
+  el.orderModalBody.innerHTML = '';
+
+  const rows = [
+    ['Número', `#${order.id}`],
+    ['Máquina', state.machineCode ?? String(order.machine_id)],
+    ['Componente', `${name} (${order.component_code})`],
+    ['Status', MAINTENANCE_STATUS_LABELS[order.status] ?? order.status],
+    ['Prioridade', PRIORITY_LABELS[order.priority] ?? order.priority],
+    ['Ciclos na origem', formatNumber(order.source_cycles)],
+    ['Peças reservadas', partsText],
+    ['ID SAP', order.sap?.external_id],
+    ['Evento SAP', order.sap?.event],
+    ['Envio SAP', order.sap?.sent_at ? formatDateTime(order.sap.sent_at) : '—'],
+    ['Previsão', formatDateTime(order.due_at)],
+    ['Criada em', formatDateTime(order.created_at)],
+    ['Atualizada em', formatDateTime(order.updated_at)],
+    ['Concluída em', formatDateTime(order.completed_at)],
+  ];
+
+  for (const [label, value] of rows) {
+    el.orderModalBody.append(modalRow(label, value));
+  }
+
+  const active = ['planned', 'open', 'in_progress'].includes(order.status);
+  el.orderSend.disabled = !active || order.status === 'in_progress';
+  el.orderCancel.disabled = !active;
+}
+
+function openOrderModal(orderId) {
+  const id = Number(orderId);
+  const order = state.orders.find((item) => item.id === id);
+  if (!order) return;
+
+  state.selectedOrderId = id;
+  renderOrderModal(order);
+  el.orderModal.hidden = false;
+  el.orderModalClose.focus();
+}
+
+function closeOrderModal() {
+  el.orderModal.hidden = true;
+  state.selectedOrderId = null;
+}
+
+async function changeSelectedOrder(action) {
+  const id = state.selectedOrderId;
+  if (id === null) return;
+
+  try {
+    const response = await fetch(`/api/maintenance/orders/${id}/${action}`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    closeOrderModal();
+    await Promise.all([refreshMaintenance(), refreshAlerts()]);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 function renderMaintenance(data) {
   const components = data?.components ?? [];
   const orders = data?.orders ?? [];
   const names = new Map(components.map((component) => [component.code, component.name]));
+
+  state.orders = orders;
+  state.maintenanceNames = names;
+  if (
+    state.selectedOrderId !== null &&
+    !orders.some((order) => order.id === state.selectedOrderId)
+  ) {
+    closeOrderModal();
+  }
 
   el.maintenanceComponents.innerHTML = '';
   el.maintenanceEmpty.style.display = components.length === 0 ? 'block' : 'none';
@@ -718,9 +837,27 @@ el.alertsList.addEventListener('click', (event) => {
 });
 
 el.maintenanceOrdersBody.addEventListener('click', (event) => {
+  const link = event.target.closest('.order-link');
+  if (link) {
+    openOrderModal(link.dataset.id);
+    return;
+  }
+
   const button = event.target.closest('.order-action');
   if (!button) return;
   void completeMaintenanceOrder(button.dataset.id);
+});
+
+el.orderModalClose.addEventListener('click', closeOrderModal);
+el.orderModalDismiss.addEventListener('click', closeOrderModal);
+el.orderModal.querySelector('[data-close-modal]').addEventListener('click', closeOrderModal);
+el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
+el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !el.orderModal.hidden) {
+    closeOrderModal();
+  }
 });
 
 window.addEventListener('resize', () => {

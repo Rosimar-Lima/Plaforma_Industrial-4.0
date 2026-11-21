@@ -278,6 +278,58 @@ function createApp({
     }
   });
 
+  app.post('/api/maintenance/orders/:id/send', async (req, res, next) => {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId < 1) {
+      res.status(400).json({ error: 'invalid_maintenance_order_id' });
+      return;
+    }
+
+    try {
+      const order = await repository.sendMaintenanceOrder(orderId);
+      if (!order) {
+        res.status(404).json({ error: 'maintenance_order_not_found' });
+        return;
+      }
+
+      streamHub.broadcast('maintenance', {
+        machineId: order.machine_id,
+        action: 'sent',
+        order,
+      });
+
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/maintenance/orders/:id/cancel', async (req, res, next) => {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId < 1) {
+      res.status(400).json({ error: 'invalid_maintenance_order_id' });
+      return;
+    }
+
+    try {
+      const order = await repository.cancelMaintenanceOrder(orderId);
+      if (!order) {
+        res.status(404).json({ error: 'maintenance_order_not_found' });
+        return;
+      }
+
+      streamHub.broadcast('maintenance', {
+        machineId: order.machine_id,
+        action: 'cancelled',
+        order,
+      });
+
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/maintenance/orders/:id/complete', async (req, res, next) => {
     const orderId = Number(req.params.id);
     if (!Number.isInteger(orderId) || orderId < 1) {

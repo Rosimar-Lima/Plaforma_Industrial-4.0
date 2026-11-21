@@ -159,6 +159,26 @@ function createFakeRepository() {
         ],
       };
     },
+    async sendMaintenanceOrder(id) {
+      if (id !== 3) return null;
+      return {
+        id,
+        machine_id: 1,
+        component_code: 'fill-valve',
+        status: 'in_progress',
+        priority: 'high',
+      };
+    },
+    async cancelMaintenanceOrder(id) {
+      if (id !== 3) return null;
+      return {
+        id,
+        machine_id: 1,
+        component_code: 'fill-valve',
+        status: 'cancelled',
+        priority: 'high',
+      };
+    },
     async completeMaintenanceOrder(id) {
       if (id !== 3) return null;
       return {
@@ -569,6 +589,9 @@ test('GET / serve o dashboard estático', async () => {
     assert.ok(html.includes('production-panel'));
     assert.ok(html.includes('chart-summary'));
     assert.ok(html.includes('Volume envasado'));
+    assert.ok(html.includes('order-modal'));
+    assert.ok(html.includes('Enviar para manutenção'));
+    assert.ok(html.includes('Cancelar ordem'));
   } finally {
     await app.close();
   }
@@ -598,6 +621,72 @@ test('GET /api/machines/:id/maintenance valida o id', async () => {
     const response = await fetch(`${app.baseUrl}/api/machines/abc/maintenance`);
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/maintenance/orders/:id/send envia OS para manutenção', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const app = await startApp(createFakeRepository(), { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/maintenance/orders/3/send`, {
+      method: 'POST',
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.order.status, 'in_progress');
+    assert.equal(broadcasts[0].event, 'maintenance');
+    assert.equal(broadcasts[0].data.action, 'sent');
+
+    const missing = await fetch(`${app.baseUrl}/api/maintenance/orders/999/send`, {
+      method: 'POST',
+    });
+    assert.equal(missing.status, 404);
+
+    const invalid = await fetch(`${app.baseUrl}/api/maintenance/orders/abc/send`, {
+      method: 'POST',
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/maintenance/orders/:id/cancel cancela a OS', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const app = await startApp(createFakeRepository(), { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/maintenance/orders/3/cancel`, {
+      method: 'POST',
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.order.status, 'cancelled');
+    assert.equal(broadcasts[0].data.action, 'cancelled');
+
+    const missing = await fetch(`${app.baseUrl}/api/maintenance/orders/999/cancel`, {
+      method: 'POST',
+    });
+    assert.equal(missing.status, 404);
   } finally {
     await app.close();
   }

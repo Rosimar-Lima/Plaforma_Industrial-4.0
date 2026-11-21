@@ -168,7 +168,25 @@ Restaurare `ALERT_STOPPED_MS=60000` ao final.
 `ok`/`warning`/`critical`. Componentes acima de 80% têm OS `planned`; em 100% a
 OS fica `open`. A OS mostra peças reservadas e o evento enviado ao SAP simulado.
 
-3. Clique em **Concluir** em uma OS ativa.
+3. Clique no número de uma OS ativa (ex.: `#3`).
+
+**Esperado:** abre um formulário com número, máquina, componente, status,
+prioridade, ciclos na origem, peças reservadas, ID/evento/envio SAP e datas da
+ordem, com os botões **Enviar para manutenção**, **Cancelar ordem** e **Fechar**.
+
+4. Clique em **Enviar para manutenção**.
+
+**Esperado:** o modal fecha, a OS passa a `in_progress` (`Em execução`) e o
+evento `maintenance_order.sent` aparece na outbox SAP. O botão de envio fica
+desabilitado se a OS já estiver em execução.
+
+5. Abra novamente a OS e clique em **Cancelar ordem**.
+
+**Esperado:** a OS sai da lista de ativas (status `cancelled`) e o evento
+`maintenance_order.cancelled` aparece na outbox SAP. Se a condição de uso
+persistir, uma nova OS é criada na próxima telemetria.
+
+6. Clique em **Concluir** em uma OS ativa.
 
 **Esperado:** a OS passa a `completed`, o contador do componente é zerado, o
 status volta para `ok` e o alerta `maintenance.*` correspondente é resolvido.
@@ -183,8 +201,10 @@ status volta para `ok` e o alerta `maintenance.*` correspondente é resolvido.
 Invoke-RestMethod http://localhost:3000/api/integrations/sap/outbox?limit=20
 ```
 
-**Esperado:** eventos `maintenance_order.created`, com `external_id` no formato
-`SAP-<id>-<sufixo>`, status `sent` e payload com os dados da OS.
+**Esperado:** eventos `maintenance_order.created`, `maintenance_order.sent` e
+`maintenance_order.cancelled` (conforme as ações executadas em AT-06), com
+`external_id` no formato `SAP-<id>-<sufixo>`, status `sent` e payload com os
+dados da OS.
 
 ### AT-08 — Gateway no modo simulador
 

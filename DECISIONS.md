@@ -364,6 +364,7 @@ Modelar manutenção preventiva a partir dos contadores de produção já ingeri
 - A troca da outbox simulada por um SAP real fica isolada em
   `sap_outbox`/webhook.
 - A manutenção é preventiva (baseada em uso), não preditiva.
+- Os status `in_progress` e `cancelled` foram acrescentados depois (ADR-016).
 
 ---
 
@@ -463,3 +464,46 @@ Renomear toda a superfície da integração de ERP para SAP:
 - Volumes antigos exigem `database/migrations/001_rename_erp_to_sap.sql`; o
   schema novo já cria `sap_outbox`.
 - Eventos antigos têm IDs e payloads convertidos pela migração.
+
+---
+
+# ADR-016 — Detalhe e ações da ordem de serviço no dashboard
+
+**Status:** Aceita
+
+**Contexto:**
+
+A tabela de OS do dashboard só permitia concluir a ordem. O número da OS não
+era clicável e não havia uma tela com as informações completas da ordem nem
+a possibilidade de enviá-la para manutenção ou cancelá-la.
+
+**Decisão:**
+
+Abrir um modal ao clicar no número da OS ativa, com todos os dados disponíveis
+(número, máquina, componente, status, prioridade, ciclos na origem, peças
+reservadas, ID/evento/envio SAP e datas de criação, previsão, atualização e
+conclusão) e três ações: **Enviar para manutenção**, **Cancelar ordem** e
+**Fechar**.
+
+- `POST /api/maintenance/orders/:id/send` → status `in_progress` + evento
+  `maintenance_order.sent` na outbox SAP.
+- `POST /api/maintenance/orders/:id/cancel` → status `cancelled` + evento
+  `maintenance_order.cancelled` na outbox SAP.
+- `POST /api/maintenance/orders/:id/complete` permanece como conclusão, com
+  consumo de peças e reset do contador do componente.
+- Transições só valem para OS ativas (`planned`, `open`, `in_progress`); o
+  modal desabilita ações já aplicáveis (envio em `in_progress`).
+- O modal fecha com o botão Fechar, com o backdrop ou com `Esc`, e também é
+  fechado automaticamente se a OS deixar de aparecer na lista (ex.: conclusão
+  pela ação da tabela).
+
+**Consequências:**
+
+- Nenhuma tabela nova: os status cabem na coluna `VARCHAR(20)` existente e a
+  unique index de OS ativa continua cobrindo `planned`/`open`/`in_progress`.
+- Cancelar uma OS permite que a próxima telemetria gere uma nova OS para o
+  mesmo componente, se a condição de uso persistir.
+- Histórico de envio/cancelamento fica registrado na outbox SAP, sem alterar o
+  contrato de leitura `GET /api/machines/:id/maintenance`.
+- O modal é apenas uma camada de UI; qualquer cliente pode chamar as rotas
+  diretamente.

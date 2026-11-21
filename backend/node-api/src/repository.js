@@ -317,6 +317,66 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return result;
   }
 
+  async function changeMaintenanceOrderStatus(orderId, status, eventType) {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const result = await client.query(
+        `SELECT id, machine_id, component_code, status, priority, source_cycles,
+                due_at, created_at, updated_at, completed_at
+         FROM maintenance_orders
+         WHERE id = $1
+         FOR UPDATE`,
+        [orderId]
+      );
+      const order = result.rows[0];
+
+      if (!order) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+
+      if (order.status === status) {
+        await client.query('COMMIT');
+        return order;
+      }
+
+      if (!['planned', 'open', 'in_progress'].includes(order.status)) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+
+      const updated = await client.query(
+        `UPDATE maintenance_orders
+         SET status = $2, updated_at = now(), completed_at = NULL
+         WHERE id = $1
+         RETURNING id, machine_id, component_code, status, priority, source_cycles,
+                   due_at, created_at, updated_at, completed_at`,
+        [orderId, status]
+      );
+
+      const component = maintenance?.components?.find(
+        (item) => item.code === order.component_code
+      ) ?? {
+        code: order.component_code,
+        name: order.component_code,
+        mtbfCycles: 0,
+        parts: [],
+      };
+      await insertSapOutbox(client, updated.rows[0], component, eventType);
+
+      await client.query('COMMIT');
+      return updated.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   return {
     async ingestTelemetry(record) {
       const client = await pool.connect();
@@ -624,6 +684,22 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       };
     },
 
+    async sendMaintenanceOrder(orderId) {
+      return changeMaintenanceOrderStatus(
+        orderId,
+        'in_progress',
+        'maintenance_order.sent'
+      );
+    },
+
+    async cancelMaintenanceOrder(orderId) {
+      return changeMaintenanceOrderStatus(
+        orderId,
+        'cancelled',
+        'maintenance_order.cancelled'
+      );
+    },
+
     async completeMaintenanceOrder(orderId) {
       const client = await pool.connect();
 
@@ -648,6 +724,11 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
         if (order.status === 'completed') {
           await client.query('COMMIT');
           return order;
+        }
+
+        if (!['planned', 'open', 'in_progress'].includes(order.status)) {
+          await client.query('ROLLBACK');
+          return null;
         }
 
         const updated = await client.query(

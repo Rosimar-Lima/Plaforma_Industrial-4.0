@@ -20,6 +20,8 @@ API responsável por ingestão de telemetria, cálculo de indicadores e consulta
 | `GET` | `/api/machines/:id/alerts` | Alertas da máquina (`status=open\|all`). |
 | `POST` | `/api/alerts/:id/resolve` | Resolve um alerta aberto. |
 | `GET` | `/api/machines/:id/maintenance` | Vida útil dos componentes e OS ativas. |
+| `POST` | `/api/maintenance/orders/:id/send` | Envia a OS para manutenção (`in_progress`). |
+| `POST` | `/api/maintenance/orders/:id/cancel` | Cancela a OS (`cancelled`). |
 | `POST` | `/api/maintenance/orders/:id/complete` | Conclui uma OS e reseta o contador. |
 | `GET` | `/api/integrations/sap/outbox` | Eventos enviados ao SAP simulado. |
 
@@ -56,6 +58,23 @@ Cálculo:
 
 Os contadores são cumulativos: a produção do período é `última - primeira`
 amostra.
+
+## Ordens de manutenção
+
+As OS ativas têm status `planned` (atenção) ou `open` (crítico). O dashboard
+permite abrir o detalhe de cada OS e:
+
+- `POST /api/maintenance/orders/:id/send` muda o status para `in_progress` e
+  publica `maintenance_order.sent` na outbox SAP;
+- `POST /api/maintenance/orders/:id/cancel` muda o status para `cancelled` e
+  publica `maintenance_order.cancelled`, liberando o componente para uma nova
+  OS na próxima telemetria;
+- `POST /api/maintenance/orders/:id/complete` conclui a OS, consome as peças e
+  zera o contador de uso do componente.
+
+Transições só são aceitas para OS ativas. IDs inválidos retornam `400` e OS
+inexistentes/encerradas retornam `404`. Cada transição publica um evento
+`maintenance` no SSE.
 
 ## Alertas
 

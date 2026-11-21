@@ -528,9 +528,24 @@ button:hover {
   background: rgba(56, 189, 248, 0.15);
 }
 
-.order-action {
+.order-action,
+.order-link {
   padding: 5px 9px;
   font-size: 11px;
+}
+
+.order-link {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.order-link:hover {
+  color: var(--accent-strong);
 }
 
 .alert-list {
@@ -607,6 +622,125 @@ button:hover {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.78);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(85vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-head h3 {
+  font-size: 16px;
+}
+
+.modal-close {
+  padding: 2px 9px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.modal-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.modal-row:last-child {
+  border-bottom: 0;
+}
+
+.modal-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.modal-value {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-primary,
+.modal-danger {
+  font-weight: 600;
+}
+
+.modal-primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #04121f;
+}
+
+.modal-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: #fca5a5;
+}
+
+.modal-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 900px) {

@@ -323,6 +323,80 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/maintenance/orders/{id}/send:
+    post:
+      tags: [Manutenção]
+      summary: Envia uma OS para manutenção e publica o evento no SAP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador numérico da OS
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: OS enviada (status in_progress)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/MaintenanceOrder'
+        '400':
+          description: Identificador inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: OS não encontrada ou já encerrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/maintenance/orders/{id}/cancel:
+    post:
+      tags: [Manutenção]
+      summary: Cancela uma OS e publica o evento no SAP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador numérico da OS
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: OS cancelada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/MaintenanceOrder'
+        '400':
+          description: Identificador inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: OS não encontrada ou já encerrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/maintenance/orders/{id}/complete:
     post:
       tags: [Manutenção]
@@ -742,7 +816,7 @@ components:
           example: fill-valve
         status:
           type: string
-          enum: [planned, open, in_progress, completed]
+          enum: [planned, open, in_progress, completed, cancelled]
         priority:
           type: string
           enum: [high, critical]
