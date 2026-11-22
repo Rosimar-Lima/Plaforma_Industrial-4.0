@@ -754,3 +754,87 @@ telemetria para mostrar.
   volta. Se o contador do CLP tiver sido zerado nesse intervalo, esse incremento
   não pode ser recuperado por ADS.
 - Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.
+
+---
+
+# ADR-022 - Gateway real como serviço Windows no host
+
+**Status:** Aceita
+
+**Contexto:**
+
+O gateway ADS rodava como processo destacado no host. Após um reinício da
+máquina, a telemetria real parava e o dashboard passava a `Sem comunicação` até
+alguém iniciar o processo manualmente. A rota ADS estática para
+`39.90.64.65.1.1` vive no router do TwinCAT instalado no Windows, então mover o
+gateway para um container Linux do Compose exigiria recriar essa rota e mudar a
+forma de conexão, sem ganho operacional neste cenário.
+
+**Decisão:**
+
+- O gateway de produção continua no host e passa a ser um serviço Windows
+  (`PI40Gateway`) usando WinSW 2.13.0 como wrapper.
+- A configuração `gateway/service/PI40-Gateway.xml` é versionada: entrypoint
+  `src/index.js`, diretório de trabalho `gateway/`, início automático atrasado,
+  reinício após falha, logs rotacionados em `gateway/service/logs/` e variáveis
+  de ambiente explícitas (protocolo, backend, máquina, polling e ADS).
+- `gateway/scripts/install-service.ps1` instala, remove, inicia, para, reinicia
+  e consulta o serviço. Exige PowerShell elevado, verifica Node.js, dependências
+  e o arquivo de configuração, baixa o WinSW e valida o SHA-256 publicado antes
+  de usar o binário. O `.exe` baixado não é versionado.
+- As variáveis do serviço são a fonte de configuração em produção e têm
+  prioridade sobre `gateway/.env`; desenvolvimento local continua com `npm start`.
+- O serviço usa a conta `LocalSystem` (padrão do WinSW), que enxerga a rota ADS
+  de máquina e o backend em `localhost`.
+- O simulador do Compose permanece parado enquanto o gateway real estiver ativo,
+  para não publicar telemetria sintética na mesma máquina.
+
+**Consequências:**
+
+- O gateway sobe automaticamente com o Windows e volta após falha, sem depender
+  de sessão interativa nem de inicialização manual.
+- Instalar, atualizar ou remover o serviço exige direitos de administrador; o
+  binário do wrapper é verificado por hash e atualizado apenas pelo instalador.
+- Trocar protocolo, NetId, porta ou backend exige editar o XML e reinstalar o
+  serviço; um `gateway/.env` local não altera o serviço já instalado.
+- O `<executable>` assume Node.js em `C:\Program Files\nodejs\node.exe`; em
+  instalações diferentes, o XML deve ser ajustado antes de instalar.
+- A topologia permanece: PLC/linha como fonte da verdade, gateway no host/edge,
+  backend e banco no Compose. ADR-002, ADR-018, ADR-020 e ADR-021 continuam
+  válidas; nenhum comando é escrito no CLP.
+
+---
+
+# ADR-023 - Heartbeat com estado da linha desconhecido
+
+**Status:** Aceita
+
+**Contexto:**
+
+A ADR-021 passou a limpar `running` para `null` quando a leitura ADS falha, para
+não mostrar um estado obsoleto da linha. Porém a validação
+`POST /api/gateway/status` aceitava `running` apenas como booleano quando o
+campo estava presente. Com o gateway rodando como serviço e o TwinCAT fora do
+modo `Run`, o backend respondia `400 invalid_payload` a cada heartbeat. O
+tracker nunca era atualizado e o dashboard ficava preso em `unknown` em vez de
+mostrar `Sem comunicação`.
+
+**Decisão:**
+
+- `running: null` é aceito no heartbeat como "estado da linha desconhecido";
+  valores diferentes de `null` e de booleano continuam sendo rejeitados.
+- O gateway mantém o comportamento da ADR-021: envia `null` enquanto não consegue
+  ler o CLP, independentemente de a causa ser ADS fora, TwinCAT em config ou
+  CLP desligado.
+- `createConnectionTracker` já normaliza `null` para o estado desconhecido;
+  nenhuma mudança foi necessária no contrato SSE, no dashboard ou na telemetria.
+
+**Consequências:**
+
+- O heartbeat com falha de leitura volta a ser registrado: o dashboard mostra
+  `Sem comunicação` com o erro real do ADS, e a transição `online → offline`
+  volta a ser emitida no stream.
+- `unknown` continua sendo apenas o estado antes do primeiro heartbeat; com o
+  serviço ativo, ele dura no máximo um ciclo de polling.
+- A validação continua estrita para valores inválidos como `1`, `'true'` ou
+  objeto; apenas `null` foi acrescentado ao contrato do heartbeat.

@@ -1037,6 +1037,32 @@ test('POST /api/gateway/status aceita heartbeat e consulta connection', async ()
   }
 });
 
+test('POST /api/gateway/status aceita heartbeat sem estado da linha', async () => {
+  const app = await startApp(createFakeRepository(), { gatewayStaleMs: 60000 });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validGatewayStatus(),
+        connected: false,
+        running: null,
+        failures: 3,
+        error: 'TwinCAT desligado',
+      }),
+    });
+
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    assert.equal(body.connection.state, 'offline');
+    assert.equal(body.connection.running, null);
+    assert.equal(body.connection.failures, 3);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /api/gateway/status rejeita payload inválido', async () => {
   const app = await startApp(createFakeRepository());
 

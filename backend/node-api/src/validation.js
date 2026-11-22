@@ -129,8 +129,14 @@ function validateGatewayStatus(payload) {
     }
   }
 
-  if (payload.running !== undefined && typeof payload.running !== 'boolean') {
-    errors.push('running deve ser booleano');
+  // null significa "estado da linha desconhecido" (ADR-021): o gateway envia
+  // null quando a leitura falha, e o tracker já normaliza isso para null.
+  if (
+    payload.running !== undefined &&
+    payload.running !== null &&
+    typeof payload.running !== 'boolean'
+  ) {
+    errors.push('running deve ser booleano ou null');
   }
   if (
     payload.failures !== undefined &&

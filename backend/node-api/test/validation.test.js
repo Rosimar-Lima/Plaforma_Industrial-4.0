@@ -124,6 +124,18 @@ test('aceita status sem campos opcionais', () => {
   assert.equal(result.value.failures, 0);
 });
 
+test('aceita running nulo quando a leitura do CLP falha', () => {
+  const status = validStatus();
+  status.connected = false;
+  status.running = null;
+  status.error = 'TwinCAT desligado';
+
+  const result = validateGatewayStatus(status);
+  assert.equal(result.ok, true);
+  assert.equal(result.value.running, null);
+  assert.equal(result.value.error, 'TwinCAT desligado');
+});
+
 test('rejeita status com campos obrigatórios ou tipos inválidos', () => {
   assert.equal(validateGatewayStatus(null).ok, false);
   assert.equal(validateGatewayStatus({ machineId: 'machine-01' }).ok, false);

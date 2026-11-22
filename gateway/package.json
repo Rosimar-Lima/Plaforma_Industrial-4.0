@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "check": "node --check src/index.js && node --check src/config.js && node --check src/gateway.js && node --check src/mapping.js && node --check src/http-publisher.js && node --check src/adapters/index.js && node --check src/adapters/ads.js && node --check src/adapters/opcua.js && node --check src/adapters/modbus.js && node --check src/adapters/simulator.js",
     "test": "node --test",
-    "diagnostico": "node scripts/diagnostico-ads.js"
+    "diagnostico": "node scripts/diagnostico-ads.js",
+    "service": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-service.ps1"
   },
   "dependencies": {
     "dotenv": "^16.4.7"

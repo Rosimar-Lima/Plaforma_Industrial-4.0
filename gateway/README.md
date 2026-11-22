@@ -35,6 +35,41 @@ $env:INDUSTRIAL_PROTOCOL='simulator'; npm start
 
 Por padrão o gateway publica em `http://localhost:3000`. Rode o backend antes.
 
+## Serviço Windows (integração real)
+
+A integração com o TwinCAT depende do router ADS instalado no host, por isso o
+gateway de produção roda como serviço Windows, e não no Docker Compose. O
+wrapper WinSW fica em `gateway/service/`; o instalador valida o hash SHA-256 do
+binário baixado e o arquivo `.exe` não é versionado.
+
+Em um PowerShell **elevado (Administrador)**:
+
+```powershell
+cd gateway
+npm install
+.\scripts\install-service.ps1 -Action Install
+.\scripts\install-service.ps1 -Action Status
+```
+
+Outras ações: `Start`, `Stop`, `Restart`, `Uninstall`. O serviço é
+`PI40Gateway`, com início automático (atrasado), reinício em 10 s após falha e
+logs rotacionados em `gateway/service/logs/`.
+
+```powershell
+Get-Content .\service\logs\PI40-Gateway.out.log -Tail 50
+Get-Content .\service\logs\PI40-Gateway.err.log -Tail 50
+```
+
+A configuração do serviço está em `gateway/service/PI40-Gateway.xml`. Edite os
+elementos `<env>` para trocar protocolo, AMS NetId ou URL do backend e rode
+`-Action Install` novamente. As variáveis do serviço têm prioridade sobre um
+eventual `gateway/.env`: para desenvolvimento local, use `npm start`, sem o
+serviço. O `<executable>` assume Node.js em `C:\Program Files\nodejs\node.exe`;
+ajuste esse caminho no XML se a instalação for diferente.
+
+Com o gateway ADS ativo, mantenha o serviço `simulator` do Compose parado para
+não publicar telemetria sintética na mesma máquina.
+
 ## Configuração
 
 | Variável | Padrão | Descrição |

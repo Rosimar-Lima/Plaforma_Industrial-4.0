@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<service>
+  <id>PI40Gateway</id>
+  <name>PI40 Gateway Industrial</name>
+  <description>Gateway de telemetria da Plataforma Industrial 4.0 para a linha de envase.</description>
+
+  <!-- O gateway usa o router ADS instalado no host; por isso roda no Windows, não no Compose. -->
+  <executable>C:\Program Files\nodejs\node.exe</executable>
+  <arguments>"%BASE%\..\src\index.js"</arguments>
+  <workingdirectory>%BASE%\..</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <delayedAutoStart/>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <!-- Variáveis do serviço têm prioridade sobre um eventual gateway/.env. -->
+  <env name="INDUSTRIAL_PROTOCOL" value="ads"/>
+  <env name="BACKEND_URL" value="http://localhost:3000"/>
+  <env name="GATEWAY_MACHINE_ID" value="machine-01"/>
+  <env name="GATEWAY_POLL_MS" value="1000"/>
+  <env name="ADS_TARGET_AMS_NET_ID" value="39.90.64.65.1.1"/>
+  <env name="ADS_TARGET_PORT" value="851"/>
+  <env name="ADS_TIMEOUT_MS" value="5000"/>
+  <env name="ADS_AUTO_RECONNECT" value="false"/>
+</service>
