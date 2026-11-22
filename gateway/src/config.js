@@ -48,7 +48,7 @@ function loadConfig(env = process.env) {
 
   return {
     protocol,
-    machineId: env.GATEWAY_MACHINE_ID || env.MACHINE_ID || 'machine-01',
+    machineId: env.GATEWAY_MACHINE_ID || env.MACHINE_ID || 'Linha-01',
     pollMs,
     backendUrl: env.BACKEND_URL || 'http://localhost:3000',
     plcVersion: env.PLC_VERSION || null,
@@ -57,7 +57,10 @@ function loadConfig(env = process.env) {
       targetAmsNetId: env.ADS_TARGET_AMS_NET_ID || '39.90.64.65.1.1',
       targetAdsPort: toNumber(env.ADS_TARGET_PORT, 851, 'ADS_TARGET_PORT'),
       timeoutMs: toNumber(env.ADS_TIMEOUT_MS, 5000, 'ADS_TIMEOUT_MS'),
-      autoReconnect: toBoolean(env.ADS_AUTO_RECONNECT, true),
+      // O gateway recria o cliente ADS a cada poll quando a leitura falha.
+      // Duas reconexões automáticas (biblioteca + gateway) competem pela mesma
+      // porta local do router e impedem a recuperação após queda do TwinCAT.
+      autoReconnect: toBoolean(env.ADS_AUTO_RECONNECT, false),
     },
     opcua: {
       endpointUrl: env.OPCUA_ENDPOINT_URL || 'opc.tcp://localhost:4840',
@@ -73,6 +76,13 @@ function loadConfig(env = process.env) {
     },
     simulator: {
       autoStart: toBoolean(env.SIMULATOR_AUTO_START, true),
+    },
+    control: {
+      // Mesmo token definido no backend (SYSTEM_CONTROL_TOKEN).
+      token: env.PI40_CONTROL_TOKEN || 'pi40-local-control',
+      commandPath:
+        env.PI40_CONTROL_COMMAND_PATH ||
+        path.resolve(__dirname, '../../runtime/system-command.json'),
     },
   };
 }

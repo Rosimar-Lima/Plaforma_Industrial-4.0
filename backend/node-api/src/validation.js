@@ -107,8 +107,68 @@ function validateTelemetry(payload) {
   };
 }
 
+function validateGatewayStatus(payload) {
+  if (!isPlainObject(payload)) {
+    return { ok: false, errors: ['payload deve ser um objeto'] };
+  }
+
+  const errors = [];
+  const machineId = typeof payload.machineId === 'string' ? payload.machineId.trim() : '';
+  if (!machineId || machineId.length > 50) {
+    errors.push('machineId deve ser uma string de 1 a 50 caracteres');
+  }
+  if (typeof payload.connected !== 'boolean') {
+    errors.push('connected deve ser booleano');
+  }
+
+  for (const field of ['timestamp', 'lastReadAt']) {
+    if (payload[field] !== undefined && payload[field] !== null) {
+      if (typeof payload[field] !== 'string' || Number.isNaN(Date.parse(payload[field]))) {
+        errors.push(`${field} deve ser uma data ISO válida`);
+      }
+    }
+  }
+
+  // null significa "estado da linha desconhecido" (ADR-021): o gateway envia
+  // null quando a leitura falha, e o tracker já normaliza isso para null.
+  if (
+    payload.running !== undefined &&
+    payload.running !== null &&
+    typeof payload.running !== 'boolean'
+  ) {
+    errors.push('running deve ser booleano ou null');
+  }
+  if (
+    payload.failures !== undefined &&
+    (!Number.isInteger(payload.failures) || payload.failures < 0)
+  ) {
+    errors.push('failures deve ser um inteiro não negativo');
+  }
+  if (payload.error !== undefined && payload.error !== null && typeof payload.error !== 'string') {
+    errors.push('error deve ser uma string');
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    value: {
+      machineId,
+      connected: payload.connected,
+      running: typeof payload.running === 'boolean' ? payload.running : null,
+      lastReadAt: payload.lastReadAt ?? null,
+      timestamp: payload.timestamp ?? null,
+      failures: payload.failures ?? 0,
+      error: payload.error ?? null,
+    },
+  };
+}
+
 module.exports = {
   LINE_BOOLEAN_FIELDS,
   PRODUCTION_FIELDS,
   validateTelemetry,
+  validateGatewayStatus,
 };

@@ -30,11 +30,31 @@ test('publica em /api/telemetry', async () => {
     retryDelayMs: 1,
   });
 
-  const body = await publisher.publish({ machineId: 'machine-01' });
+  const body = await publisher.publish({ machineId: 'Linha-01' });
 
   assert.equal(request.url, 'http://localhost:3000/api/telemetry');
   assert.equal(request.options.method, 'POST');
-  assert.equal(JSON.parse(request.options.body).machineId, 'machine-01');
+  assert.equal(JSON.parse(request.options.body).machineId, 'Linha-01');
+  assert.equal(body.status, 'accepted');
+});
+
+test('publica status em /api/gateway/status', async () => {
+  let request = null;
+  const fetchImpl = async (url, options) => {
+    request = { url, options };
+    return jsonResponse(202, { status: 'accepted' });
+  };
+  const publisher = createHttpPublisher({
+    backendUrl: 'http://localhost:3000/',
+    fetchImpl,
+    retryDelayMs: 1,
+  });
+
+  const body = await publisher.publishStatus({ machineId: 'Linha-01', connected: false });
+
+  assert.equal(request.url, 'http://localhost:3000/api/gateway/status');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(JSON.parse(request.options.body).connected, false);
   assert.equal(body.status, 'accepted');
 });
 
@@ -51,7 +71,7 @@ test('tenta novamente após erro 5xx', async () => {
     retryDelayMs: 1,
   });
 
-  await publisher.publish({ machineId: 'machine-01' });
+  await publisher.publish({ machineId: 'Linha-01' });
   assert.equal(calls, 2);
 });
 

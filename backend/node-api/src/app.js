@@ -1,8 +1,12 @@
 'use strict';
 
 const express = require('express');
-const { validateTelemetry } = require('./validation');
+const fs = require('node:fs');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { validateTelemetry, validateGatewayStatus } = require('./validation');
 const { createStreamHub } = require('./stream');
+const { createConnectionTracker } = require('./connection');
 const {
   DEFAULT_SHIFT_HOURS,
   DEFAULT_SHIFT_START_HOUR,
@@ -29,12 +33,19 @@ function createApp({
   telemetryLimit = '100kb',
   nominalCapacityPerHour = 400,
   dashboardDir = null,
+  systemStatusPath = null,
+  systemControl = {
+    token: 'pi40-local-control',
+    commandPath: path.resolve(__dirname, '../../../runtime/system-command.json'),
+    allowedOrigin: 'http://localhost:3000',
+  },
   productionSettings = {
     timeZone: DEFAULT_TIME_ZONE,
     shiftStartHour: DEFAULT_SHIFT_START_HOUR,
     shiftHours: DEFAULT_SHIFT_HOURS,
   },
   streamHub = createStreamHub(),
+  gatewayStaleMs = 10000,
 } = {}) {
   if (!repository) {
     throw new Error('repository é obrigatório');
@@ -44,6 +55,19 @@ function createApp({
   app.locals.streamHub = streamHub;
   app.disable('x-powered-by');
   app.use(express.json({ limit: telemetryLimit }));
+
+  const connectionTracker = createConnectionTracker({ staleMs: gatewayStaleMs });
+
+  function publishConnection(machineId, action, connection) {
+    streamHub.broadcast('connection', { machineId, action, connection });
+  }
+
+  const sweepTimer = setInterval(() => {
+    for (const result of connectionTracker.sweep()) {
+      publishConnection(result.machineId, 'lost', result.view);
+    }
+  }, Math.max(1000, Math.min(5000, gatewayStaleMs / 2)));
+  sweepTimer.unref?.();
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
@@ -66,6 +90,13 @@ function createApp({
         line: result.value.line,
         production: result.value.production,
       });
+      if (saved.productionTotal) {
+        streamHub.broadcast('production', {
+          machineId: result.value.machineId,
+          action: saved.productionReset ? 'reset' : 'update',
+          totals: saved.productionTotal,
+        });
+      }
       for (const event of saved.alerts ?? []) {
         streamHub.broadcast('alert', {
           machineId: result.value.machineId,
@@ -90,10 +121,51 @@ function createApp({
     }
   });
 
+  app.post('/api/gateway/status', async (req, res, next) => {
+    const result = validateGatewayStatus(req.body);
+
+    if (!result.ok) {
+      res.status(400).json({ error: 'invalid_payload', details: result.errors });
+      return;
+    }
+
+    try {
+      const { view, events } = connectionTracker.update(
+        result.value.machineId,
+        result.value
+      );
+      publishConnection(result.value.machineId, 'update', view);
+      for (const event of events) {
+        publishConnection(result.value.machineId, event, view);
+      }
+      res.status(202).json({ status: 'accepted', connection: view });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/machines', async (req, res, next) => {
     try {
       const machines = await repository.listMachines();
       res.json({ machines });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/machines/:id/connection', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    try {
+      // O gateway reporta o código (Linha-01), mas a URL usa o id numérico.
+      // Resolve o código para consultar o mesmo heartbeat usado no stream.
+      const machines = await repository.listMachines();
+      const machine = machines.find((item) => Number(item.id) === machineId);
+      res.json(connectionTracker.view(machine?.code ?? String(machineId)));
     } catch (error) {
       next(error);
     }
@@ -158,6 +230,21 @@ function createApp({
         nominalCapacityPerHour: nominal,
       });
       res.json({ machineId, from, to, ...indicators });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/machines/:id/production/total', async (req, res, next) => {
+    const machineId = Number(req.params.id);
+    if (!Number.isInteger(machineId) || machineId < 1) {
+      res.status(400).json({ error: 'invalid_machine_id' });
+      return;
+    }
+
+    try {
+      const totals = await repository.getProductionTotal(machineId);
+      res.json(totals);
     } catch (error) {
       next(error);
     }
@@ -370,6 +457,72 @@ function createApp({
       next(error);
     }
   });
+
+  app.get('/api/system/status', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const statusFile =
+      systemStatusPath || (dashboardDir ? path.join(dashboardDir, 'system-status.json') : null);
+    const idle = {
+      state: 'idle',
+      action: null,
+      steps: [],
+      message: 'Nenhuma operação de sistema em andamento.',
+      updatedAt: null,
+    };
+
+    if (!statusFile) {
+      res.json(idle);
+      return;
+    }
+
+    try {
+      res.json({ ...idle, ...JSON.parse(fs.readFileSync(statusFile, 'utf8')) });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        res.json(idle);
+        return;
+      }
+      res.status(500).json({ error: 'system_status_unavailable' });
+    }
+  });
+
+  // O navegador não pode acionar um serviço Windows e, neste Docker/WSL, o
+  // container não alcança portas do host. O pedido é entregue por um arquivo no
+  // diretório `runtime/`, compartilhado com o gateway por um bind mount.
+  // Cabeçalho customizado + Origin impedem que um site externo dispare a ação.
+  async function requestSystemAction(action, req, res) {
+    const origin = req.get('origin');
+    const allowed = new Set([
+      systemControl.allowedOrigin,
+      systemControl.allowedOrigin.replace('localhost', '127.0.0.1'),
+    ]);
+    if (req.get('x-pi40-control') !== '1' || (origin && !allowed.has(origin))) {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+
+    const commandPath = systemControl.commandPath;
+    const tempPath = `${commandPath}.${process.pid}.${randomUUID()}.tmp`;
+    const command = {
+      action,
+      token: systemControl.token,
+      requestedAt: new Date().toISOString(),
+      nonce: randomUUID(),
+    };
+
+    try {
+      await fs.promises.mkdir(path.dirname(commandPath), { recursive: true });
+      await fs.promises.writeFile(tempPath, JSON.stringify(command), 'utf8');
+      await fs.promises.rename(tempPath, commandPath);
+      res.status(202).json({ accepted: true, action });
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+      res.status(502).json({ error: 'system_command_unavailable', detail: error.message });
+    }
+  }
+
+  app.post('/api/system/stop', (req, res) => void requestSystemAction('stop', req, res));
+  app.post('/api/system/start', (req, res) => void requestSystemAction('start', req, res));
 
   if (dashboardDir) {
     app.use(express.static(dashboardDir, { extensions: ['html'] }));

@@ -7,7 +7,7 @@ const {
 } = require('../../../simulator/line-state');
 
 function createSimulatorAdapter({
-  machineId = 'machine-01',
+  machineId = 'Linha-01',
   plcVersion = 'gateway-sim',
   autoStart = true,
 } = {}) {

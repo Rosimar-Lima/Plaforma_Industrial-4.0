@@ -14,14 +14,16 @@ function createHttpPublisher({
   if (!backendUrl) throw new Error('backendUrl é obrigatório');
   if (typeof fetchImpl !== 'function') throw new Error('fetch não disponível');
 
-  const url = `${String(backendUrl).replace(/\/+$/, '')}/api/telemetry`;
+  const baseUrl = String(backendUrl).replace(/\/+$/, '');
+  const url = `${baseUrl}/api/telemetry`;
+  const statusUrl = `${baseUrl}/api/gateway/status`;
 
-  async function post(payload) {
+  async function post(endpoint, payload) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      return await fetchImpl(url, {
+      return await fetchImpl(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -32,12 +34,12 @@ function createHttpPublisher({
     }
   }
 
-  async function publish(payload) {
+  async function postWithRetry(endpoint, payload, failureMessage) {
     let lastError = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
-        const response = await post(payload);
+        const response = await post(endpoint, payload);
 
         if (response.ok) {
           return await response.json().catch(() => ({}));
@@ -58,10 +60,21 @@ function createHttpPublisher({
       }
     }
 
-    throw lastError ?? new Error('falha ao publicar telemetria');
+    throw lastError ?? new Error(failureMessage);
   }
 
-  return { publish, url };
+  async function publish(payload) {
+    return postWithRetry(url, payload, 'falha ao publicar telemetria');
+  }
+
+  // O status é um heartbeat leve. Não usa o mesmo esquema de retry longo da
+  // telemetria: se o backend estiver fora, o próprio timeout do heartbeat no
+  // backend trata a linha como sem comunicação.
+  async function publishStatus(payload) {
+    return postWithRetry(statusUrl, payload, 'falha ao publicar status');
+  }
+
+  return { publish, publishStatus, url, statusUrl };
 }
 
 module.exports = {

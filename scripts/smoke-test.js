@@ -7,10 +7,10 @@
 // Uso:
 //   node scripts/smoke-test.js
 //   node scripts/smoke-test.js http://localhost:3000
-//   BACKEND_URL=http://localhost:3000 SMOKE_MACHINE_ID=machine-01 node scripts/smoke-test.js
+//   BACKEND_URL=http://localhost:3000 SMOKE_MACHINE_ID=Linha-01 node scripts/smoke-test.js
 
 const BASE_URL = (process.argv[2] || process.env.BACKEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-const MACHINE_CODE = process.env.SMOKE_MACHINE_ID || 'machine-01';
+const MACHINE_CODE = process.env.SMOKE_MACHINE_ID || 'Linha-01';
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS || 5000);
 
 const results = [];

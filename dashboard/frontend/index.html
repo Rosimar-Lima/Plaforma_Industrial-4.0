@@ -7,9 +7,54 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="boot-screen" class="boot-screen" hidden>
+      <div class="boot-card">
+        <header class="boot-head">
+          <div class="boot-mark" aria-hidden="true">PI40</div>
+          <div>
+            <p class="boot-kicker">Inicialização do sistema</p>
+            <h2>Preparando a PI40</h2>
+            <p class="muted">Verificando API, gateway, CLP, telemetria e banco.</p>
+          </div>
+        </header>
+        <div class="boot-progress">
+          <div class="progress-head">
+            <span>Prontidão da plataforma</span>
+            <strong id="boot-percent">0%</strong>
+          </div>
+          <div
+            id="boot-track"
+            class="progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-label="Prontidão da plataforma"
+          >
+            <div id="boot-bar" class="progress-bar"></div>
+          </div>
+        </div>
+        <ul id="boot-stages" class="stage-list boot-stages" aria-live="polite"></ul>
+        <p id="boot-hint" class="boot-hint">Aguardando as verificações iniciais...</p>
+        <footer class="boot-actions">
+          <button id="boot-retry" type="button" hidden>Tentar novamente</button>
+          <button id="boot-diagnostic" type="button">Abrir diagnóstico</button>
+          <button id="boot-enter" type="button" class="modal-primary" disabled>Entrar no painel</button>
+        </footer>
+      </div>
+    </div>
+
     <header class="topbar">
       <div class="brand">
-        <span class="logo" aria-hidden="true"></span>
+        <button
+          id="monitoring-toggle"
+          class="power-toggle off"
+          type="button"
+          aria-label="Ligar monitoramento"
+          title="Ligar monitoramento"
+        >
+          <span class="power-icon" aria-hidden="true">⏻</span>
+        </button>
         <div>
           <h1>Plataforma Industrial 4.0</h1>
           <p>Monitoramento da linha de envase</p>
@@ -30,7 +75,13 @@
           </select>
         </label>
         <button id="refresh" type="button">Atualizar</button>
-        <span id="connection" class="badge offline">Offline</span>
+        <button id="diagnostic-open" class="diagnostic-btn" type="button">Diagnóstico</button>
+        <button id="shutdown-open" class="shutdown-btn" type="button" title="Encerrar a PI40 com segurança">
+          Encerrar dia
+        </button>
+        <span id="line-connection" class="badge line-unknown" title="Comunicação com o CLP da linha">
+          Linha: —
+        </span>
       </div>
     </header>
 
@@ -57,6 +108,10 @@
             <article class="prod accent">
               <span class="stat-label">Produção total</span>
               <strong id="prod-total">0</strong>
+            </article>
+            <article class="prod saved">
+              <span class="stat-label">Acumulado no banco</span>
+              <strong id="prod-accumulated">0</strong>
             </article>
           </div>
         </section>
@@ -182,6 +237,163 @@
     <footer class="footer">
       Atualização automática a cada 3 s · indicadores e histórico a cada 15 s · alertas em tempo real
     </footer>
+
+    <div id="diagnostic-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-diagnostic></div>
+      <section
+        class="modal-card modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diagnostic-title"
+      >
+        <header class="modal-head">
+          <div>
+            <h3 id="diagnostic-title">Diagnóstico da plataforma</h3>
+            <p class="muted diagnostic-subtitle">
+              Prontidão da sessão de monitoramento e eventos reais da PI40.
+            </p>
+          </div>
+          <button
+            id="diagnostic-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body diagnostic-body">
+          <div class="diagnostic-headline">
+            <span id="monitoring-status" class="status-pill off">Desligado</span>
+            <p id="monitoring-hint" class="control-hint">
+              Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.
+            </p>
+          </div>
+
+          <div class="control-progress diagnostic-progress">
+            <div class="progress-head">
+              <span>Prontidão da plataforma</span>
+              <strong id="monitoring-percent">0%</strong>
+            </div>
+            <div
+              id="monitoring-track"
+              class="progress-track"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label="Prontidão do monitoramento"
+            >
+              <div id="monitoring-bar" class="progress-bar"></div>
+            </div>
+            <ul id="monitoring-stages" class="stage-list" aria-live="polite"></ul>
+          </div>
+
+          <div class="control-events diagnostic-events">
+            <div class="events-head">
+              <span>Eventos em tempo real</span>
+              <span id="monitoring-events-count" class="muted">0 eventos</span>
+            </div>
+            <ul id="monitoring-events" class="event-list" aria-live="polite"></ul>
+          </div>
+        </div>
+        <footer class="modal-actions">
+          <button id="diagnostic-dismiss" type="button">Fechar</button>
+        </footer>
+      </section>
+    </div>
+
+    <div id="warning-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-warning></div>
+      <section
+        class="modal-card alert-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="warning-title"
+        aria-describedby="warning-message"
+      >
+        <header class="modal-head">
+          <h3 id="warning-title">Monitoramento desligado</h3>
+          <button
+            id="warning-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body">
+          <p id="warning-message" class="warning-message"></p>
+        </div>
+        <footer class="modal-actions">
+          <button id="warning-dismiss" class="modal-primary" type="button">Entendi</button>
+        </footer>
+      </section>
+    </div>
+
+    <div id="shutdown-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-shutdown></div>
+      <section
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shutdown-title"
+      >
+        <header class="modal-head">
+          <div>
+            <h3 id="shutdown-title">Encerramento seguro da PI40</h3>
+            <p class="muted diagnostic-subtitle">
+              A linha física deve estar desligada antes de encerrar a coleta de dados.
+            </p>
+          </div>
+          <button
+            id="shutdown-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body shutdown-body">
+          <div class="shutdown-notice">
+            <strong>Antes de continuar</strong>
+            <p>
+              Ao clicar em <strong>Encerrar dia</strong>, a PI40 verifica se o CLP
+              está sem comunicação. Se a linha ainda responder — mesmo apenas
+              parada — o encerramento é bloqueado.
+            </p>
+          </div>
+          <div class="shutdown-line-state">
+            <strong id="shutdown-line-title">Verificando a linha...</strong>
+            <p id="shutdown-line-detail" class="muted">
+              Consultando o estado da comunicação com o CLP.
+            </p>
+          </div>
+          <div class="shutdown-headline">
+            <span id="shutdown-status" class="status-pill off">Confirmando</span>
+            <span id="shutdown-message" class="muted">Nenhuma operação em andamento.</span>
+          </div>
+          <ol id="shutdown-steps" class="shutdown-steps"></ol>
+          <p id="shutdown-instruction" class="shutdown-instruction" hidden>
+            Se o acionamento automático falhar, execute o atalho
+            <code>ENCERRAR-PI40.cmd</code> na pasta do projeto. Esta tela
+            acompanhará o progresso da mesma forma.
+          </p>
+          <p id="shutdown-final" class="shutdown-final" hidden>
+            É seguro desligar o computador.
+          </p>
+        </div>
+        <footer class="modal-actions">
+          <button id="shutdown-dismiss" type="button">Cancelar</button>
+          <button id="shutdown-copy" type="button" hidden>Copiar comando</button>
+          <button id="shutdown-confirm" type="button" hidden>
+            Verificar novamente
+          </button>
+        </footer>
+      </section>
+    </div>
 
     <div id="order-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>

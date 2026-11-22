@@ -2,13 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { createApp } = require('../src/app');
 
 function validPayload() {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp: '2026-01-01T00:00:00.000Z',
     plcVersion: '1.0.0',
     line: {
@@ -47,7 +49,7 @@ function createFakeRepository() {
       return { machineId: record.machineId, recordedAt: record.timestamp };
     },
     async listMachines() {
-      return [{ id: 1, code: 'machine-01', name: 'machine-01', location: null }];
+      return [{ id: 1, code: 'Linha-01', name: 'Linha-01', location: null }];
     },
     async listTelemetry(machineId, options) {
       telemetryCalls.push({ machineId, options });
@@ -250,7 +252,7 @@ test('POST /api/telemetry aceita payload válido', async () => {
     assert.equal(response.status, 202);
     const body = await response.json();
     assert.equal(body.status, 'accepted');
-    assert.equal(body.machineId, 'machine-01');
+    assert.equal(body.machineId, 'Linha-01');
     assert.equal(repository.calls.length, 1);
     assert.equal(repository.calls[0].production.filled, 10);
   } finally {
@@ -266,7 +268,7 @@ test('POST /api/telemetry rejeita payload inválido', async () => {
     const response = await fetch(`${app.baseUrl}/api/telemetry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ machineId: 'machine-01' }),
+      body: JSON.stringify({ machineId: 'Linha-01' }),
     });
 
     assert.equal(response.status, 400);
@@ -318,7 +320,7 @@ test('GET /api/machines lista máquinas', async () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.machines.length, 1);
-    assert.equal(body.machines[0].code, 'machine-01');
+    assert.equal(body.machines[0].code, 'Linha-01');
   } finally {
     await app.close();
   }
@@ -425,7 +427,7 @@ test('POST /api/telemetry publica a amostra no stream', async () => {
     assert.equal(response.status, 202);
     assert.equal(broadcasts.length, 1);
     assert.equal(broadcasts[0].event, 'telemetry');
-    assert.equal(broadcasts[0].data.machineId, 'machine-01');
+    assert.equal(broadcasts[0].data.machineId, 'Linha-01');
     assert.equal(broadcasts[0].data.line.step, 2);
   } finally {
     await app.close();
@@ -929,5 +931,289 @@ test('GET /api/machines/:id/production valida id, bucket, período e intervalo',
     assert.equal((await tooLarge.json()).error, 'range_too_large');
   } finally {
     await app.close();
+  }
+});
+
+test('GET /api/machines/:id/production/total devolve o acumulado do banco', async () => {
+  const repository = createFakeRepository();
+  repository.getProductionTotal = async (machineId) => ({
+    machineId,
+    accumulatedProduced: 12430,
+    accumulatedGood: 12400,
+    lastCounter: 0,
+    lastGoodCounter: 0,
+    lastResetAt: '2026-11-21T19:05:00.000Z',
+    updatedAt: '2026-11-21T19:05:00.000Z',
+  });
+
+  const app = await startApp(repository);
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/1/production/total`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).accumulatedProduced, 12430);
+
+    const invalid = await fetch(`${app.baseUrl}/api/machines/abc/production/total`);
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/telemetry publica reset do acumulado no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const repository = createFakeRepository();
+  repository.ingestTelemetry = async (record) => ({
+    machineId: record.machineId,
+    recordedAt: record.timestamp,
+    productionReset: true,
+    productionTotal: {
+      accumulatedProduced: 12430,
+      accumulatedGood: 12400,
+      lastResetAt: record.timestamp,
+    },
+  });
+
+  const app = await startApp(repository, { streamHub });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validPayload()),
+    });
+
+    assert.equal(response.status, 202);
+    const productionEvent = broadcasts.find((item) => item.event === 'production');
+    assert.ok(productionEvent);
+    assert.equal(productionEvent.data.action, 'reset');
+    assert.equal(productionEvent.data.totals.accumulatedProduced, 12430);
+  } finally {
+    await app.close();
+  }
+});
+
+function validGatewayStatus(overrides = {}) {
+  return {
+    machineId: 'Linha-01',
+    connected: true,
+    running: false,
+    lastReadAt: '2026-11-21T20:00:00.000Z',
+    timestamp: '2026-11-21T20:00:00.000Z',
+    failures: 0,
+    error: null,
+    ...overrides,
+  };
+}
+
+test('POST /api/gateway/status aceita heartbeat e consulta connection', async () => {
+  const app = await startApp(createFakeRepository(), { gatewayStaleMs: 60000 });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validGatewayStatus()),
+    });
+
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    assert.equal(body.connection.state, 'online');
+    assert.equal(body.connection.running, false);
+
+    const connection = await fetch(`${app.baseUrl}/api/machines/1/connection`);
+    assert.equal(connection.status, 200);
+    const view = await connection.json();
+    assert.equal(view.connected, true);
+    assert.equal(view.machineId, 'Linha-01');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/gateway/status aceita heartbeat sem estado da linha', async () => {
+  const app = await startApp(createFakeRepository(), { gatewayStaleMs: 60000 });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...validGatewayStatus(),
+        connected: false,
+        running: null,
+        failures: 3,
+        error: 'TwinCAT desligado',
+      }),
+    });
+
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    assert.equal(body.connection.state, 'offline');
+    assert.equal(body.connection.running, null);
+    assert.equal(body.connection.failures, 3);
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/gateway/status rejeita payload inválido', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ machineId: 'Linha-01' }),
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'invalid_payload');
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/machines/:id/connection valida id', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines/abc/connection`);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, 'invalid_machine_id');
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/gateway/status publica eventos de perda e restabelecimento no stream', async () => {
+  const broadcasts = [];
+  const streamHub = {
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+  const app = await startApp(createFakeRepository(), { streamHub, gatewayStaleMs: 60000 });
+
+  async function sendStatus(overrides) {
+    return fetch(`${app.baseUrl}/api/gateway/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validGatewayStatus(overrides)),
+    });
+  }
+
+  try {
+    await sendStatus();
+    await sendStatus({ connected: false, error: 'timeout ADS' });
+    await sendStatus({ timestamp: '2026-11-21T20:00:02.000Z' });
+
+    const connectionEvents = broadcasts.filter((item) => item.event === 'connection');
+    assert.equal(connectionEvents.length, 5);
+    assert.equal(connectionEvents[0].data.action, 'update');
+    assert.equal(connectionEvents[1].data.action, 'update');
+    assert.equal(connectionEvents[2].data.action, 'connection.lost');
+    assert.equal(connectionEvents[3].data.action, 'update');
+    assert.equal(connectionEvents[4].data.action, 'connection.restored');
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/system/status retorna idle quando não há arquivo de status', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/status`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const body = await response.json();
+    assert.equal(body.state, 'idle');
+    assert.deepEqual(body.steps, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/system/status devolve o progresso escrito pelo script local', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi40-status-'));
+  const statusFile = path.join(dir, 'system-status.json');
+  fs.writeFileSync(
+    statusFile,
+    JSON.stringify({
+      state: 'running',
+      action: 'Stop',
+      steps: [{ id: 'gateway', label: 'Parar gateway', status: 'active' }],
+      message: 'Parando o serviço PI40Gateway.',
+      updatedAt: '2026-11-22T12:00:00.000Z',
+    })
+  );
+  const app = await startApp(createFakeRepository(), { systemStatusPath: statusFile });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/status`);
+    const body = await response.json();
+    assert.equal(body.state, 'running');
+    assert.equal(body.action, 'Stop');
+    assert.equal(body.steps[0].status, 'active');
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/system/stop exige o cabeçalho de controle', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/stop`, { method: 'POST' });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: 'forbidden' });
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/system/stop escreve o pedido para o gateway elevado', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi40-comando-'));
+  const commandPath = path.join(dir, 'runtime', 'system-command.json');
+  const app = await startApp(createFakeRepository(), {
+    systemControl: {
+      token: 'token-do-teste',
+      commandPath,
+      allowedOrigin: 'http://localhost:3000',
+    },
+  });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/stop`, {
+      method: 'POST',
+      headers: {
+        'x-pi40-control': '1',
+        Origin: 'http://localhost:3000',
+      },
+    });
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).accepted, true);
+
+    const comando = JSON.parse(fs.readFileSync(commandPath, 'utf8'));
+    assert.equal(comando.action, 'stop');
+    assert.equal(comando.token, 'token-do-teste');
+    assert.ok(comando.nonce);
+    assert.ok(Number.isFinite(Date.parse(comando.requestedAt)));
+    assert.equal(fs.readdirSync(path.dirname(commandPath)).filter((f) => f.endsWith('.tmp')).length, 0);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

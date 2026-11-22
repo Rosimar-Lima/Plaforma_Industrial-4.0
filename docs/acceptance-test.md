@@ -110,7 +110,7 @@ com o total do OEE, e o intervalo atual aparece destacado.
 
 ```powershell
 $payload = @{
-  machineId = 'machine-01'
+  machineId = 'Linha-01'
   timestamp = (Get-Date).ToUniversalTime().ToString('o')
   line = @{
     step = 2; running = $true; conveyorOn = $true; evOn = $true; atOn = $false

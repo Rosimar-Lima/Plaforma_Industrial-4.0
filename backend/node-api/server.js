@@ -20,6 +20,7 @@ const app = createApp({
   repository,
   nominalCapacityPerHour: config.nominalCapacityPerHour,
   dashboardDir: config.dashboardDir,
+  systemControl: config.systemControl,
   productionSettings: config.productionSettings,
 });
 

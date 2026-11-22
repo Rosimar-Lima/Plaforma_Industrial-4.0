@@ -16,7 +16,7 @@ Comandos no terminal: `start`, `stop`, `reset`.
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
 | `BACKEND_URL` | `http://localhost:3000` | URL do backend. |
-| `MACHINE_ID` | `machine-01` | Identificador da máquina simulada. |
+| `MACHINE_ID` | `Linha-01` | Identificador da máquina simulada. |
 | `TICK_MS` | `100` | Intervalo do ciclo de simulação. |
 | `PUBLISH_MS` | `1000` | Intervalo de publicação da telemetria. |
 | `AUTO_START` | `true` | Liga a linha automaticamente ao iniciar. |
@@ -47,7 +47,7 @@ Regras preservadas:
 
 ```json
 {
-  "machineId": "machine-01",
+  "machineId": "Linha-01",
   "timestamp": "2026-01-01T00:00:00.000Z",
   "plcVersion": "1.0.0",
   "line": {

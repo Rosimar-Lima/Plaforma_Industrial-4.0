@@ -9,7 +9,7 @@ test('carrega configuração padrão (ADS)', () => {
   const config = loadConfig({});
 
   assert.equal(config.protocol, 'ads');
-  assert.equal(config.machineId, 'machine-01');
+  assert.equal(config.machineId, 'Linha-01');
   assert.equal(config.pollMs, 1000);
   assert.equal(config.backendUrl, 'http://localhost:3000');
   assert.equal(config.symbols.running, 'GVL_HMI.bRunning');

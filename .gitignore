@@ -16,6 +16,7 @@ out/
 
 # Logs
 *.log
+gateway/service/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -28,6 +29,17 @@ coverage/
 # Sistema operacional
 .DS_Store
 Thumbs.db
+
+# Progresso da inicialização/encerramento escrito pelo script local
+dashboard/frontend/system-status.json
+
+# Pedidos de controle trocados entre o backend (container) e o gateway (host).
+# O diretório existe no repositório; apenas os arquivos de runtime são ignorados.
+runtime/*
+!runtime/.gitkeep
+
+# Wrapper do serviço Windows (baixado pelo instalador)
+gateway/service/*.exe
 
 # Editores
 .idea/
