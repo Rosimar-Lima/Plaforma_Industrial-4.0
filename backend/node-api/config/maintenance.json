@@ -4,6 +4,7 @@
     {
       "code": "conveyor-bearing",
       "name": "Rolamento da esteira",
+      "sapControlNumber": "1001011",
       "kind": "bearing",
       "metric": "hours",
       "source": "conveyor",
@@ -18,6 +19,7 @@
     {
       "code": "conveyor-motor",
       "name": "Motor da esteira",
+      "sapControlNumber": "1001012",
       "kind": "motor",
       "metric": "hours",
       "source": "conveyor",
@@ -32,6 +34,7 @@
     {
       "code": "fill-valve",
       "name": "Válvula de envase",
+      "sapControlNumber": "1001013",
       "kind": "valve",
       "metric": "cycles",
       "source": "filled",
@@ -45,6 +48,7 @@
     {
       "code": "cap-valve",
       "name": "Válvula de tampagem",
+      "sapControlNumber": "1001014",
       "kind": "valve",
       "metric": "cycles",
       "source": "capped",

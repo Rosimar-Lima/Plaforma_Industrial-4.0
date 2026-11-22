@@ -969,7 +969,9 @@ components:
               example: sent
             external_id:
               type: string
-              example: SAP-1-MWOEZ6OF
+              pattern: '^[0-9]{7}$'
+              description: Número de controle fixo do componente na SAP.
+              example: '1001013'
             sent_at:
               type: string
               format: date-time
@@ -983,6 +985,11 @@ components:
         name:
           type: string
           example: Válvula de envase
+        sapControlNumber:
+          type: string
+          pattern: '^[0-9]{7}$'
+          description: Número de controle do componente na SAP (fixo, sem prefixo).
+          example: '1001013'
         kind:
           type: string
           example: valve
@@ -1049,7 +1056,9 @@ components:
           example: sent
         external_id:
           type: string
-          example: SAP-1-MWOEZ6OF
+          pattern: '^[0-9]{7}$'
+          description: Número de controle fixo do componente na SAP.
+          example: '1001013'
         payload:
           type: object
         created_at:

@@ -1019,3 +1019,40 @@ era redundante e ocupava espaço na barra de controles.
   heartbeat continua sendo feita em `/api/machines/:id/connection`.
 
 ---
+
+# ADR-028 — Número de controle SAP por componente
+
+**Status:** Aceita
+
+**Contexto:**
+
+A outbox SAP simulada usava `SAP-<id da OS>-<sufixo temporal>`, por exemplo
+`SAP-16-MWRYB92B`. O número identificava a OS, não o componente, e não havia
+uma correspondência estável entre a válvula de envase e a de tampagem. O
+operador pediu um identificador apenas numérico, de 7 dígitos, crescente na
+configuração e exclusivo de cada componente cadastrado.
+
+**Decisão:**
+
+- Cada componente em `backend/node-api/config/maintenance.json` passa a ter
+  `sapControlNumber`, uma string de exatamente 7 dígitos, maior que 100:
+  rolamento `1001011`, motor `1001012`, válvula de envase `1001013` e válvula
+  de tampagem `1001014`.
+- `normalizeComponent` valida o formato e mantém um mapa padrão por código, de
+  modo que um componente conhecido nunca fique sem número. O valor é exposto em
+  `GET /api/machines/:id/maintenance` e no payload da outbox.
+- `insertSapOutbox` usa esse número como `external_id` e como `sapOrderId`; o
+  payload também inclui `component.sapControlNumber`. Não há mais prefixo,
+  sufixo temporal nem contador por OS.
+- A migração `005_sap_control_numbers.sql` converte os eventos já persistidos
+  com base no `component_code` da OS, preservando o histórico.
+
+**Consequências:**
+
+- Válvula de envase e válvula de tampagem têm números próprios e permanentes;
+  novas OS do mesmo componente reutilizam o mesmo número de controle.
+- O formato passa a ser previsível (`^[0-9]{7}$`), sem ambiguidade entre OS e
+  componente.
+- Nenhum comando é enviado ao CLP e o acumulado de produção não é alterado.
+
+---

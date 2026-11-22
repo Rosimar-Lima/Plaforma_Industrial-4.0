@@ -172,7 +172,7 @@ function createFakeRepository() {
             source_usage: 340,
             source_unit: 'ciclos',
             parts: [{ code: 'KIT-VAL-FILL', name: 'Kit', quantity: 1, status: 'reserved' }],
-            sap: { external_id: 'SAP-3-X', status: 'sent' },
+            sap: { external_id: '1001013', status: 'sent' },
           },
         ],
       };
@@ -215,7 +215,7 @@ function createFakeRepository() {
           order_id: 3,
           event_type: 'maintenance_order.created',
           status: 'sent',
-          external_id: 'SAP-3-X',
+          external_id: '1001013',
           payload: {},
           created_at: '2026-01-01T00:00:00.000Z',
           sent_at: '2026-01-01T00:00:00.000Z',
@@ -631,7 +631,7 @@ test('GET /api/machines/:id/maintenance retorna vida útil e OS abertas', async 
     assert.equal(body.components[1].usage, 160);
     assert.equal(body.orders.length, 1);
     assert.equal(body.orders[0].source_usage, 340);
-    assert.equal(body.orders[0].sap.external_id, 'SAP-3-X');
+    assert.equal(body.orders[0].sap.external_id, '1001013');
   } finally {
     await app.close();
   }
@@ -760,7 +760,7 @@ test('GET /api/integrations/sap/outbox lista envios ao SAP', async () => {
     const body = await response.json();
     assert.equal(body.limit, 5);
     assert.equal(body.outbox.length, 1);
-    assert.equal(body.outbox[0].external_id, 'SAP-3-X');
+    assert.equal(body.outbox[0].external_id, '1001013');
 
     const invalid = await fetch(`${app.baseUrl}/api/integrations/sap/outbox?limit=0`);
     assert.equal(invalid.status, 400);

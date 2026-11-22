@@ -109,7 +109,10 @@ ligado**. Cada componente entra em `warning` ao atingir 80% da vida útil, geran
 uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS reserva peças
 e é publicada em uma outbox de SAP simulada. O dashboard mostra os componentes
 com a unidade correta, as OS ativas e permite enviar, cancelar ou concluir a
-manutenção (resetando o uso). Endpoints: `GET /api/machines/:id/maintenance`,
+manutenção (resetando o uso). Cada componente tem um número de controle SAP
+fixo de 7 dígitos, sem prefixo — rolamento `1001011`, motor `1001012`, válvula
+de envase `1001013` e válvula de tampagem `1001014` — usado como `external_id`
+da outbox. Endpoints: `GET /api/machines/:id/maintenance`,
 `POST /api/maintenance/orders/:id/send`,
 `POST /api/maintenance/orders/:id/cancel`,
 `POST /api/maintenance/orders/:id/complete` e
