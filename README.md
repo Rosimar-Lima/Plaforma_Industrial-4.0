@@ -54,10 +54,12 @@ runtime em `Run`) e oferece entrar em modo limitado. O atalho
 `INICIAR-PI40.cmd` abre `http://localhost:3000/?boot=1` para forçar a tela de
 abertura; um `F5` no mesmo dia volta direto ao painel.
 
-Para encerrar, **desligue a linha física primeiro** e use o botão **Encerrar dia**
-no topo do painel. O botão só é liberado quando o CLP estiver sem comunicação e
-você confirmar que a linha foi desligada: uma linha apenas parada
-(`bRunning=false` com heartbeat ativo) bloqueia o encerramento. Ao confirmar, a
+Para encerrar, **desligue a linha física primeiro** e clique em **Encerrar dia**
+no topo do painel. O primeiro clique já consulta
+`/api/machines/1/connection`: se o CLP estiver sem comunicação, o encerramento é
+disparado na hora, sem confirmação adicional. Se ainda houver heartbeat — mesmo
+com `running=false` (linha apenas parada) — o modal mostra o bloqueio e continua
+verificando a cada 2 s; basta desligar a linha, sem clicar de novo. Ao liberar, a
 tela pausa o dashboard, fecha o SSE e aciona o encerramento diretamente: o
 backend escreve o pedido em `runtime/system-command.json` (bind mount
 compartilhado com o host) e o gateway, rodando como serviço Windows elevado,

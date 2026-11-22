@@ -908,13 +908,15 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
   automaticamente, sem exigir clique. A data é guardada em `localStorage`
   (`pi40.boot.date`); `INICIAR-PI40.cmd` abre `?boot=1` para repetir a tela a cada
   inicialização, enquanto um `F5` no mesmo dia volta direto ao painel.
-- O botão **Encerrar dia** abre um modal que consulta o estado da linha. O
-  encerramento só é liberado quando `/api/machines/:id/connection` estiver
-  `offline` (sem leitura ADS) **e** o operador confirmar que a linha física foi
-  desligada. Com heartbeat ativo — inclusive com `running=false` (linha apenas
-  parada) — o botão fica bloqueado. O modal atualiza esse estado a cada 2 s.
-  Depois de confirmado, ele pausa o dashboard, fecha o SSE e mostra as cinco
-  etapas com o mesmo componente de estágios do diagnóstico.
+- Ao clicar em **Encerrar dia**, o modal consulta imediatamente
+  `/api/machines/:id/connection`. Se estiver `offline` (sem leitura ADS), o
+  encerramento começa no mesmo clique, sem checkbox nem segunda confirmação.
+  Com heartbeat ativo — inclusive com `running=false` (linha apenas parada) — o
+  modal mostra o bloqueio e repete a verificação a cada 2 s, liberando
+  automaticamente assim que a linha for desligada. O botão **Verificar
+  novamente** força uma checagem imediata. Ao liberar, ele pausa o dashboard,
+  fecha o SSE e mostra as cinco etapas com o mesmo componente de estágios do
+  diagnóstico.
 - Quem executa as operações é o script local `scripts/pi40-dia.ps1`, com ações
   `Start`, `Stop` e `Status`. O gateway, já rodando como serviço Windows sob
   `LocalSystem`, vigia o arquivo `runtime/system-command.json` e dispara o script
@@ -941,8 +943,8 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
 
 - O operador vê o motivo da ausência de dados já na abertura, com instrução
   específica para o erro de ADS/TwinCAT encontrado na integração real.
-- O desligamento deixa de depender de decorar comandos. Só acontece com a linha
-  fisicamente desligada (confirmada pelo operador), para todos os containers e
+- O desligamento deixa de depender de decorar comandos. Só acontece quando o CLP
+  não responde (linha desligada pelo operador), para todos os containers e
   processos, sem apagar volume nem histórico, e fecha a página do dashboard.
 - O botão passou a acionar o encerramento diretamente, sem pedir que o operador
   execute o atalho. Não há execução remota irrestrita: nenhuma porta é aberta,

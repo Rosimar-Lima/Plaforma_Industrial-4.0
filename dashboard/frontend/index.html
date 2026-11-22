@@ -360,8 +360,9 @@
           <div class="shutdown-notice">
             <strong>Antes de continuar</strong>
             <p>
-              Desligue a linha de envase fisicamente. Se o CLP ainda responder —
-              mesmo com a linha apenas parada — o encerramento fica bloqueado.
+              Ao clicar em <strong>Encerrar dia</strong>, a PI40 verifica se o CLP
+              está sem comunicação. Se a linha ainda responder — mesmo apenas
+              parada — o encerramento é bloqueado.
             </p>
           </div>
           <div class="shutdown-line-state">
@@ -369,10 +370,6 @@
             <p id="shutdown-line-detail" class="muted">
               Consultando o estado da comunicação com o CLP.
             </p>
-            <label id="shutdown-line-confirm" hidden>
-              <input type="checkbox" id="shutdown-line-checkbox" />
-              Confirmo que a linha física foi desligada.
-            </label>
           </div>
           <div class="shutdown-headline">
             <span id="shutdown-status" class="status-pill off">Confirmando</span>
@@ -391,8 +388,8 @@
         <footer class="modal-actions">
           <button id="shutdown-dismiss" type="button">Cancelar</button>
           <button id="shutdown-copy" type="button" hidden>Copiar comando</button>
-          <button id="shutdown-confirm" type="button" class="modal-danger">
-            Confirmar encerramento
+          <button id="shutdown-confirm" type="button" hidden>
+            Verificar novamente
           </button>
         </footer>
       </section>

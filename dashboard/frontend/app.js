@@ -92,11 +92,10 @@ const state = {
   },
   shutdown: {
     status: null,
-    phase: 'confirm',
+    phase: 'checking',
     timer: null,
     lineTimer: null,
     lineState: 'unknown',
-    lineConfirmed: false,
     closeScheduled: false,
     startedAt: 0,
     apiLost: false,
@@ -127,8 +126,6 @@ const el = {
   shutdownFinal: document.getElementById('shutdown-final'),
   shutdownLineTitle: document.getElementById('shutdown-line-title'),
   shutdownLineDetail: document.getElementById('shutdown-line-detail'),
-  shutdownLineConfirm: document.getElementById('shutdown-line-confirm'),
-  shutdownLineCheckbox: document.getElementById('shutdown-line-checkbox'),
   machineSelect: document.getElementById('machine-select'),
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
@@ -705,21 +702,21 @@ function renderShutdown(status) {
   el.shutdownStatus.classList.add(pill[0]);
   el.shutdownStatus.textContent = pill[1];
   el.shutdownMessage.textContent =
-    status?.message || 'Nenhuma operação de sistema em andamento.';
+    status?.message ||
+    (state.shutdown.phase === 'checking'
+      ? 'Verificando se a linha está desligada...'
+      : 'Nenhuma operação de sistema em andamento.');
 
   const finished = stateName === 'done' || stateName === 'error';
   el.shutdownFinal.hidden = stateName !== 'done';
   const manualFallback = state.shutdown.phase === 'progress' && !state.shutdown.triggered;
   el.shutdownInstruction.hidden = !manualFallback || finished;
   el.shutdownCopy.hidden = !manualFallback;
-  const canConfirm =
-    state.shutdown.phase === 'confirm' &&
-    state.shutdown.lineState === 'offline' &&
-    state.shutdown.lineConfirmed;
-  el.shutdownConfirm.disabled = !canConfirm;
-  el.shutdownConfirm.textContent =
-    state.shutdown.phase === 'confirm' ? 'Encerrar a PI40' : 'Encerramento iniciado';
-  el.shutdownDismiss.textContent = state.shutdown.phase === 'confirm' ? 'Cancelar' : 'Fechar';
+  const blocked = state.shutdown.phase === 'blocked';
+  el.shutdownConfirm.hidden = !blocked;
+  el.shutdownConfirm.disabled = false;
+  el.shutdownConfirm.textContent = 'Verificar novamente';
+  el.shutdownDismiss.textContent = state.shutdown.phase === 'progress' ? 'Fechar' : 'Cancelar';
 
   if (stateName === 'done' && !state.shutdown.closeScheduled) {
     state.shutdown.closeScheduled = true;
@@ -825,13 +822,12 @@ async function pollSystemStatus() {
 
 function renderShutdownLineState(connection) {
   const lineState = state.shutdown.lineState;
-  el.shutdownLineConfirm.hidden = lineState !== 'offline';
 
   if (lineState === 'offline') {
-    el.shutdownLineTitle.textContent = 'Linha desligada';
+    el.shutdownLineTitle.textContent = 'Linha desligada confirmada';
     el.shutdownLineTitle.className = 'line-offline';
     el.shutdownLineDetail.textContent =
-      'O CLP não responde. Confirme que a linha física foi desligada antes de encerrar a PI40.';
+      'O CLP não responde. O encerramento da PI40 foi iniciado automaticamente.';
   } else if (lineState === 'online') {
     el.shutdownLineTitle.textContent =
       connection?.running === false ? 'Linha apenas parada' : 'Linha em operação';
@@ -846,10 +842,6 @@ function renderShutdownLineState(connection) {
       'Aguardando heartbeat do gateway. Não é possível liberar o encerramento sem essa leitura.';
   }
 
-  if (lineState !== 'offline') {
-    state.shutdown.lineConfirmed = false;
-    el.shutdownLineCheckbox.checked = false;
-  }
   renderShutdown(null);
 }
 
@@ -861,23 +853,11 @@ function applyShutdownLineState(connection) {
   renderShutdownLineState(connection);
 }
 
-async function refreshShutdownLineState() {
-  let connection = state.lineConnection;
-  if (state.machineId) {
-    try {
-      connection = await getJson(`/api/machines/${state.machineId}/connection`);
-    } catch (error) {
-      // Mantém a última leitura conhecida; o estado só libera o botão se for offline.
-    }
-  }
-  applyShutdownLineState(connection);
-}
-
 function startLineStatePolling() {
   if (state.shutdown.lineTimer) return;
   state.shutdown.lineTimer = setInterval(() => {
-    if (state.shutdown.phase === 'confirm' && !el.shutdownModal.hidden) {
-      void refreshShutdownLineState();
+    if (state.shutdown.phase === 'blocked' && !el.shutdownModal.hidden) {
+      void verifyAndShutdown();
     }
   }, 2000);
 }
@@ -889,21 +869,21 @@ function stopLineStatePolling() {
   }
 }
 
-function openShutdownModal() {
-  state.shutdown.phase = 'confirm';
+function startShutdown() {
+  if (state.shutdown.phase === 'progress') return;
+
+  state.shutdown.phase = 'checking';
   state.shutdown.apiLost = false;
   state.shutdown.triggered = false;
   state.shutdown.closeScheduled = false;
   state.shutdown.lineState = 'unknown';
-  state.shutdown.lineConfirmed = false;
   state.shutdown.status = null;
-  el.shutdownLineCheckbox.checked = false;
   el.shutdownFinal.textContent = 'É seguro desligar o computador.';
   el.shutdownModal.hidden = false;
+  el.shutdownMessage.textContent = 'Verificando se a linha está desligada...';
   renderShutdown(null);
   startLineStatePolling();
-  void refreshShutdownLineState();
-  el.shutdownConfirm.focus();
+  void verifyAndShutdown();
 }
 
 function closeShutdownModal() {
@@ -933,10 +913,38 @@ async function triggerSystemAction() {
   }
 }
 
-function confirmShutdown() {
-  if (state.shutdown.phase !== 'confirm') return;
-  if (state.shutdown.lineState !== 'offline' || !state.shutdown.lineConfirmed) return;
+async function verifyAndShutdown() {
+  if (state.shutdown.phase === 'progress') return;
 
+  state.shutdown.phase = 'checking';
+  el.shutdownMessage.textContent = 'Verificando se a linha está desligada...';
+  renderShutdown(null);
+
+  let connection = state.lineConnection;
+  if (state.machineId) {
+    try {
+      connection = await getJson(`/api/machines/${state.machineId}/connection`);
+    } catch (error) {
+      connection = null;
+    }
+  }
+  applyShutdownLineState(connection);
+
+  if (state.shutdown.lineState === 'offline') {
+    beginShutdownProgress();
+    return;
+  }
+
+  state.shutdown.phase = 'blocked';
+  const detail =
+    state.shutdown.lineState === 'online'
+      ? 'A linha ainda responde ao CLP. Desligue-a fisicamente; a verificação será repetida automaticamente.'
+      : 'Não foi possível confirmar a comunicação com o CLP. A verificação será repetida automaticamente.';
+  el.shutdownMessage.textContent = detail;
+  renderShutdown(null);
+}
+
+function beginShutdownProgress() {
   stopLineStatePolling();
   state.shutdown.phase = 'progress';
   state.shutdown.startedAt = Date.now();
@@ -1796,16 +1804,12 @@ el.warningModal.querySelector('[data-close-warning]').addEventListener('click', 
 el.bootEnter.addEventListener('click', enterDashboard);
 el.bootRetry.addEventListener('click', retryBoot);
 el.bootDiagnostic.addEventListener('click', openDiagnosticModal);
-el.shutdownOpen.addEventListener('click', openShutdownModal);
+el.shutdownOpen.addEventListener('click', startShutdown);
 el.shutdownClose.addEventListener('click', closeShutdownModal);
 el.shutdownDismiss.addEventListener('click', closeShutdownModal);
 el.shutdownModal.querySelector('[data-close-shutdown]').addEventListener('click', closeShutdownModal);
-el.shutdownConfirm.addEventListener('click', confirmShutdown);
+el.shutdownConfirm.addEventListener('click', () => void verifyAndShutdown());
 el.shutdownCopy.addEventListener('click', copyShutdownCommand);
-el.shutdownLineCheckbox.addEventListener('change', () => {
-  state.shutdown.lineConfirmed = el.shutdownLineCheckbox.checked;
-  renderShutdown(null);
-});
 el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
 el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
 

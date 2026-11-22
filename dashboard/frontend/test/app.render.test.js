@@ -102,7 +102,7 @@ function carregarApp(opcoes = {}) {
       '};' +
       '\nglobalThis.__statusSistema = (status) => renderShutdown(status);' +
       '\nglobalThis.__maquina = (id) => { state.machineId = id; };' +
-      '\nglobalThis.__estadoLinha = () => ({ state: state.shutdown.lineState, confirmed: state.shutdown.lineConfirmed });',
+      '\nglobalThis.__estadoLinha = () => state.shutdown.lineState;',
     contexto
   );
 
@@ -216,19 +216,10 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
   assert.equal(obter('shutdown-modal').hidden, true);
   obter('shutdown-open').dispatch('click');
   await new Promise((resolve) => setImmediate(resolve));
+
   assert.equal(obter('shutdown-modal').hidden, false);
-  assert.equal(obter('shutdown-line-title').textContent, 'Linha desligada');
-  assert.equal(obter('shutdown-line-confirm').hidden, false);
-  assert.equal(obter('shutdown-confirm').disabled, true);
-
-  obter('shutdown-line-checkbox').checked = true;
-  obter('shutdown-line-checkbox').dispatch('change');
-  assert.equal(obter('shutdown-confirm').disabled, false);
-
-  obter('shutdown-confirm').dispatch('click');
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(obter('shutdown-confirm').disabled, true);
+  assert.equal(obter('shutdown-line-title').textContent, 'Linha desligada confirmada');
+  assert.equal(obter('shutdown-confirm').hidden, true);
   const stop = chamadas.find((chamada) => chamada.url === '/api/system/stop');
   assert.ok(stop);
   assert.equal(stop.options.method, 'POST');
@@ -279,11 +270,13 @@ test('Linha apenas parada bloqueia o encerramento', async () => {
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(obter('shutdown-line-title').textContent, 'Linha apenas parada');
-  assert.equal(obter('shutdown-line-confirm').hidden, true);
-  assert.equal(obter('shutdown-confirm').disabled, true);
+  assert.equal(obter('shutdown-confirm').hidden, false);
+  assert.equal(obter('shutdown-confirm').textContent, 'Verificar novamente');
   assert.match(obter('shutdown-line-detail').textContent, /não é permitido/);
+  assert.equal(chamadas.includes('/api/system/stop'), false);
 
   obter('shutdown-confirm').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(chamadas.includes('/api/system/stop'), false);
 });
 
@@ -300,10 +293,6 @@ test('Falha no acionamento automático oferece o atalho manual', async () => {
   contexto.__maquina('Linha-01');
 
   obter('shutdown-open').dispatch('click');
-  await new Promise((resolve) => setImmediate(resolve));
-  obter('shutdown-line-checkbox').checked = true;
-  obter('shutdown-line-checkbox').dispatch('change');
-  obter('shutdown-confirm').dispatch('click');
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(obter('shutdown-instruction').hidden, false);
