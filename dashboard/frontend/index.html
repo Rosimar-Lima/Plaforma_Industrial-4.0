@@ -9,7 +9,15 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="logo" aria-hidden="true"></span>
+        <button
+          id="monitoring-toggle"
+          class="power-toggle off"
+          type="button"
+          aria-label="Ligar monitoramento"
+          title="Ligar monitoramento"
+        >
+          <span class="power-icon" aria-hidden="true">⏻</span>
+        </button>
         <div>
           <h1>Plataforma Industrial 4.0</h1>
           <p>Monitoramento da linha de envase</p>
@@ -30,6 +38,7 @@
           </select>
         </label>
         <button id="refresh" type="button">Atualizar</button>
+        <button id="diagnostic-open" class="diagnostic-btn" type="button">Diagnóstico</button>
         <span id="line-connection" class="badge line-unknown" title="Comunicação com o CLP da linha">
           Linha: —
         </span>
@@ -38,57 +47,6 @@
 
     <main class="layout">
       <div class="stack">
-        <section class="panel control-panel" aria-labelledby="control-title">
-          <div class="panel-head">
-            <div>
-              <h2 id="control-title">Central de monitoramento</h2>
-              <p id="monitoring-subtitle" class="muted">
-                Controle da sessão de monitoramento da PI40. O CLP não recebe comandos.
-              </p>
-            </div>
-            <span id="monitoring-status" class="status-pill off">Desligado</span>
-          </div>
-
-          <div class="control-grid">
-            <div class="control-main">
-              <button id="monitoring-toggle" class="power-btn off" type="button">
-                <span class="power-icon" aria-hidden="true">⏻</span>
-                <span id="monitoring-toggle-label">Ligar monitoramento</span>
-              </button>
-              <p id="monitoring-hint" class="control-hint">
-                Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.
-              </p>
-            </div>
-
-            <div class="control-progress">
-              <div class="progress-head">
-                <span>Prontidão da plataforma</span>
-                <strong id="monitoring-percent">0%</strong>
-              </div>
-              <div
-                id="monitoring-track"
-                class="progress-track"
-                role="progressbar"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0"
-                aria-label="Prontidão do monitoramento"
-              >
-                <div id="monitoring-bar" class="progress-bar"></div>
-              </div>
-              <ul id="monitoring-stages" class="stage-list" aria-live="polite"></ul>
-            </div>
-
-            <div class="control-events">
-              <div class="events-head">
-                <span>Eventos em tempo real</span>
-                <span id="monitoring-events-count" class="muted">0 eventos</span>
-              </div>
-              <ul id="monitoring-events" class="event-list" aria-live="polite"></ul>
-            </div>
-          </div>
-        </section>
-
         <section class="panel status-panel">
           <div class="panel-head">
             <h2>Operação e produção</h2>
@@ -239,6 +197,71 @@
     <footer class="footer">
       Atualização automática a cada 3 s · indicadores e histórico a cada 15 s · alertas em tempo real
     </footer>
+
+    <div id="diagnostic-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-diagnostic></div>
+      <section
+        class="modal-card modal-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diagnostic-title"
+      >
+        <header class="modal-head">
+          <div>
+            <h3 id="diagnostic-title">Diagnóstico da plataforma</h3>
+            <p class="muted diagnostic-subtitle">
+              Prontidão da sessão de monitoramento e eventos reais da PI40.
+            </p>
+          </div>
+          <button
+            id="diagnostic-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body diagnostic-body">
+          <div class="diagnostic-headline">
+            <span id="monitoring-status" class="status-pill off">Desligado</span>
+            <p id="monitoring-hint" class="control-hint">
+              Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.
+            </p>
+          </div>
+
+          <div class="control-progress diagnostic-progress">
+            <div class="progress-head">
+              <span>Prontidão da plataforma</span>
+              <strong id="monitoring-percent">0%</strong>
+            </div>
+            <div
+              id="monitoring-track"
+              class="progress-track"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label="Prontidão do monitoramento"
+            >
+              <div id="monitoring-bar" class="progress-bar"></div>
+            </div>
+            <ul id="monitoring-stages" class="stage-list" aria-live="polite"></ul>
+          </div>
+
+          <div class="control-events diagnostic-events">
+            <div class="events-head">
+              <span>Eventos em tempo real</span>
+              <span id="monitoring-events-count" class="muted">0 eventos</span>
+            </div>
+            <ul id="monitoring-events" class="event-list" aria-live="polite"></ul>
+          </div>
+        </div>
+        <footer class="modal-actions">
+          <button id="diagnostic-dismiss" type="button">Fechar</button>
+        </footer>
+      </section>
+    </div>
 
     <div id="order-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>

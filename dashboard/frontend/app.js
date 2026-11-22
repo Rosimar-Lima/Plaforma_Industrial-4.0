@@ -79,11 +79,13 @@ const el = {
   machineSelect: document.getElementById('machine-select'),
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
+  diagnosticOpen: document.getElementById('diagnostic-open'),
   lineConnection: document.getElementById('line-connection'),
-  monitoringPanel: document.querySelector('.control-panel'),
+  diagnosticModal: document.getElementById('diagnostic-modal'),
+  diagnosticClose: document.getElementById('diagnostic-close'),
+  diagnosticDismiss: document.getElementById('diagnostic-dismiss'),
   monitoringStatus: document.getElementById('monitoring-status'),
   monitoringToggle: document.getElementById('monitoring-toggle'),
-  monitoringToggleLabel: document.getElementById('monitoring-toggle-label'),
   monitoringHint: document.getElementById('monitoring-hint'),
   monitoringPercent: document.getElementById('monitoring-percent'),
   monitoringTrack: document.getElementById('monitoring-track'),
@@ -239,7 +241,7 @@ function renderMonitoring() {
 
   const status = el.monitoringStatus;
   status.classList.remove('off', 'starting', 'on', 'stopping');
-  el.monitoringPanel.classList.remove('off', 'starting', 'on', 'stopping');
+  el.diagnosticModal.classList.remove('off', 'starting', 'on', 'stopping');
   el.monitoringToggle.classList.remove('off', 'starting', 'on', 'stopping');
 
   const configs = {
@@ -260,7 +262,7 @@ function renderMonitoring() {
     },
     stopping: {
       pill: 'Desligando',
-      button: 'Ligando...',
+      button: 'Aguarde, desligando...',
       hint: 'Encerrando a sessão de monitoramento com segurança. O histórico permanece no banco.',
     },
   };
@@ -269,9 +271,10 @@ function renderMonitoring() {
 
   status.textContent = current.pill;
   status.classList.add(state.monitoring.mode);
-  el.monitoringPanel.classList.add(state.monitoring.mode);
+  el.diagnosticModal.classList.add(state.monitoring.mode);
   el.monitoringToggle.classList.add(state.monitoring.mode);
-  el.monitoringToggleLabel.textContent = current.button;
+  el.monitoringToggle.setAttribute('aria-label', current.button);
+  el.monitoringToggle.setAttribute('title', current.button);
   el.monitoringHint.textContent = current.hint;
   el.monitoringToggle.disabled = state.monitoring.mode === 'stopping';
 
@@ -451,6 +454,14 @@ function stopMonitoring() {
       renderMonitoring();
     },
   });
+}
+
+function openDiagnosticModal() {
+  el.diagnosticModal.hidden = false;
+}
+
+function closeDiagnosticModal() {
+  el.diagnosticModal.hidden = true;
 }
 
 function renderLineConnection(connection) {
@@ -1286,7 +1297,12 @@ el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
 el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !el.orderModal.hidden) {
+  if (event.key !== 'Escape') return;
+  if (!el.diagnosticModal.hidden) {
+    closeDiagnosticModal();
+    return;
+  }
+  if (!el.orderModal.hidden) {
     closeOrderModal();
   }
 });
@@ -1454,6 +1470,10 @@ async function start() {
     if (state.monitoring.enabled) stopMonitoring();
     else void startMonitoring();
   });
+  el.diagnosticOpen.addEventListener('click', openDiagnosticModal);
+  el.diagnosticClose.addEventListener('click', closeDiagnosticModal);
+  el.diagnosticDismiss.addEventListener('click', closeDiagnosticModal);
+  el.diagnosticModal.querySelector('[data-close-diagnostic]').addEventListener('click', closeDiagnosticModal);
 
   setInterval(async () => {
     if (!state.monitoring.enabled) return;

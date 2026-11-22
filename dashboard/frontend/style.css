@@ -50,12 +50,52 @@ p {
   gap: 14px;
 }
 
-.logo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), #6366f1);
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.45);
+.power-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.8);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.power-toggle:hover {
+  transform: translateY(-1px);
+}
+
+.power-toggle.off {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.power-toggle.starting,
+.power-toggle.stopping {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.08);
+}
+
+.power-toggle.on {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.18);
+}
+
+.diagnostic-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
 }
 
 .brand h1 {
@@ -551,17 +591,37 @@ button:hover {
   background: rgba(56, 189, 248, 0.15);
 }
 
-.control-panel {
-  padding: 20px;
+.diagnostic-subtitle {
+  font-size: 12px;
+  margin-top: 2px;
 }
 
-.control-panel .panel-head {
-  align-items: flex-start;
+.diagnostic-body {
+  display: grid;
+  gap: 16px;
+}
+
+.diagnostic-headline {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
-.control-panel h2 {
-  margin-bottom: 4px;
+.diagnostic-headline .control-hint {
+  margin: 0;
+}
+
+.diagnostic-progress,
+.diagnostic-events {
+  background: rgba(11, 18, 32, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.modal-card.modal-wide {
+  width: min(980px, 100%);
 }
 
 .status-pill.off {
@@ -586,62 +646,6 @@ button:hover {
   color: #bae6fd;
   background: rgba(56, 189, 248, 0.15);
   border: 1px solid rgba(56, 189, 248, 0.35);
-}
-
-.control-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1.2fr) minmax(280px, 1fr);
-  gap: 16px;
-  align-items: stretch;
-}
-
-.control-main,
-.control-progress,
-.control-events {
-  background: rgba(11, 18, 32, 0.45);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.control-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  justify-content: center;
-}
-
-.power-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 58px;
-  padding: 14px 18px;
-  font-size: 15px;
-  font-weight: 700;
-  border-radius: 12px;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.power-btn:hover {
-  transform: translateY(-1px);
-}
-
-.power-btn.on {
-  background: linear-gradient(180deg, #22c55e, #16a34a);
-  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.25);
-}
-
-.power-btn.off {
-  background: linear-gradient(180deg, #334155, #1e293b);
-}
-
-.power-btn.starting,
-.power-btn.stopping {
-  background: linear-gradient(180deg, #0ea5e9, #0284c7);
-  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.2);
 }
 
 .power-icon {
@@ -688,11 +692,11 @@ button:hover {
   transition: width 0.45s ease;
 }
 
-.control-panel.off .progress-bar {
+#diagnostic-modal.off .progress-bar {
   background: linear-gradient(90deg, #64748b, #475569);
 }
 
-.control-panel.stopping .progress-bar {
+#diagnostic-modal.stopping .progress-bar {
   background: linear-gradient(90deg, #f59e0b, #ef4444);
 }
 
@@ -1057,10 +1061,6 @@ button:hover {
   .summary-grid,
   .maintenance-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .control-grid {
-    grid-template-columns: 1fr;
   }
 
   .event-list {
