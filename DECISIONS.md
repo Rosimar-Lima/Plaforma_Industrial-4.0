@@ -929,7 +929,9 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
   O script escreve `dashboard/frontend/system-status.json`, lido por
   `GET /api/system/status`.
 - Os atalhos `INICIAR-PI40.cmd` e `ENCERRAR-PI40.cmd` permanecem como caminho
-  manual alternativo, útil se o agente estiver indisponível.
+  manual alternativo, útil se o agente estiver indisponível. O de encerramento
+  usa `scripts/encerrar-pi40.ps1` e aplica a mesma regra do botão: consulta o
+  heartbeat e só dispara o Stop com a linha `offline`.
 - O encerramento usa `docker compose stop` para **todos** os serviços (backend,
   PostgreSQL e simulador), nunca `down -v`. Antes de parar os containers, o
   script conta as amostras persistidas; depois, verifica se sobrou algum processo

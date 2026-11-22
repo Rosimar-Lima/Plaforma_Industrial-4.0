@@ -76,7 +76,9 @@ definido como `PI40_CONTROL_TOKEN` no XML do serviço, e expira em 60 s. O
 endpoint do backend exige ainda o cabeçalho `x-pi40-control: 1` e um `Origin`
 local, para impedir que um site externo dispare a ação. Se o acionamento
 automático falhar, o modal oferece o atalho `ENCERRAR-PI40.cmd` como alternativa
-manual.
+manual. Esse atalho usa `scripts/encerrar-pi40.ps1`, que consulta o heartbeat e
+só dispara o Stop quando a linha está `offline`; com a linha apenas parada ele
+bloqueia e orienta desligá-la fisicamente.
 
 Para começar o dia, execute `INICIAR-PI40.cmd` (ou
 `powershell -File scripts\pi40-dia.ps1 -Action Start`): ele sobe backend e
