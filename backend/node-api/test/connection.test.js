@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const { createConnectionTracker } = require('../src/connection');
 
-const MACHINE = 'machine-01';
+const MACHINE = 'Linha-01';
 
 function status(overrides = {}) {
   return {

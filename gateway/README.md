@@ -75,7 +75,7 @@ não publicar telemetria sintética na mesma máquina.
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
 | `INDUSTRIAL_PROTOCOL` | `ads` | `ads`, `opcua`, `modbus` ou `simulator`. |
-| `GATEWAY_MACHINE_ID` | `machine-01` | Código da máquina no backend. |
+| `GATEWAY_MACHINE_ID` | `Linha-01` | Código da máquina no backend. |
 | `GATEWAY_POLL_MS` | `1000` | Intervalo de leitura (mínimo 100 ms). |
 | `BACKEND_URL` | `http://localhost:3000` | URL do backend. |
 | `PLC_VERSION` | — | Versão usada quando o PLC não expõe `plcVersion`. |

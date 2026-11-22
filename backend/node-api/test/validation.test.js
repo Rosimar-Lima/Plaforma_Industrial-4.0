@@ -7,7 +7,7 @@ const { validateTelemetry, validateGatewayStatus } = require('../src/validation'
 
 function validPayload() {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp: '2026-01-01T00:00:00.000Z',
     plcVersion: '1.0.0',
     line: {
@@ -30,7 +30,7 @@ function validPayload() {
 test('aceita telemetria válida e normaliza o timestamp', () => {
   const result = validateTelemetry(validPayload());
   assert.equal(result.ok, true);
-  assert.equal(result.value.machineId, 'machine-01');
+  assert.equal(result.value.machineId, 'Linha-01');
   assert.equal(result.value.timestamp, '2026-01-01T00:00:00.000Z');
   assert.equal(result.value.line.step, 2);
   assert.equal(result.value.production.total, 9);
@@ -99,7 +99,7 @@ test('rejeita contadores negativos', () => {
 
 function validStatus() {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     connected: true,
     running: false,
     lastReadAt: '2026-11-21T20:00:00.000Z',
@@ -112,13 +112,13 @@ function validStatus() {
 test('valida status do gateway', () => {
   const result = validateGatewayStatus(validStatus());
   assert.equal(result.ok, true);
-  assert.equal(result.value.machineId, 'machine-01');
+  assert.equal(result.value.machineId, 'Linha-01');
   assert.equal(result.value.connected, true);
   assert.equal(result.value.running, false);
 });
 
 test('aceita status sem campos opcionais', () => {
-  const result = validateGatewayStatus({ machineId: 'machine-01', connected: false });
+  const result = validateGatewayStatus({ machineId: 'Linha-01', connected: false });
   assert.equal(result.ok, true);
   assert.equal(result.value.running, null);
   assert.equal(result.value.failures, 0);
@@ -138,7 +138,7 @@ test('aceita running nulo quando a leitura do CLP falha', () => {
 
 test('rejeita status com campos obrigatórios ou tipos inválidos', () => {
   assert.equal(validateGatewayStatus(null).ok, false);
-  assert.equal(validateGatewayStatus({ machineId: 'machine-01' }).ok, false);
+  assert.equal(validateGatewayStatus({ machineId: 'Linha-01' }).ok, false);
 
   const status = validStatus();
   status.connected = 'true';

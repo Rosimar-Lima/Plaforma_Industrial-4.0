@@ -47,7 +47,7 @@ test('publica telemetria a cada leitura', async () => {
         published.push(payload);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     clock: () => new Date('2026-01-01T00:00:00.000Z'),
     logger: silentLogger(),
   });
@@ -56,7 +56,7 @@ test('publica telemetria a cada leitura', async () => {
 
   assert.equal(adapter.connects, 1);
   assert.equal(published.length, 1);
-  assert.equal(published[0].machineId, 'machine-01');
+  assert.equal(published[0].machineId, 'Linha-01');
   assert.equal(published[0].timestamp, '2026-01-01T00:00:00.000Z');
   assert.equal(published[0].line.step, 2);
   assert.equal(published[0].line.bottlePositioned, true);
@@ -83,7 +83,7 @@ test('reconecta após falha de conexão', async () => {
         published.push(payload);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(errors),
   });
 
@@ -119,7 +119,7 @@ test('reconecta após falha de leitura', async () => {
         published.push(payload);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(errors),
   });
 
@@ -158,7 +158,7 @@ test('fecha o adaptador antes de reconectar após falha de leitura', async () =>
         statuses.push(status);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(),
   });
 
@@ -192,7 +192,7 @@ test('fecha o adaptador quando a conexão falha', async () => {
   const gateway = createGateway({
     adapter,
     publisher: { async publish() {} },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(),
   });
 
@@ -223,7 +223,7 @@ test('limpa o estado da linha quando a leitura falha após operação', async ()
         statuses.push(status);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(),
   });
 
@@ -256,7 +256,7 @@ test('mantém a conexão quando a publicação falha', async () => {
         throw new Error('backend indisponível');
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(errors),
   });
 
@@ -286,7 +286,7 @@ test('reporta status online com o estado da linha', async () => {
         statuses.push(status);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     clock: () => new Date('2026-11-21T20:00:00.000Z'),
     logger: silentLogger(),
   });
@@ -322,7 +322,7 @@ test('reporta status offline com falhas ao falhar leitura', async () => {
         statuses.push(status);
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(errors),
   });
 
@@ -357,7 +357,7 @@ test('continua publicando telemetria se o status falhar', async () => {
         throw new Error('backend fora');
       },
     },
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     logger: silentLogger(errors),
   });
 

@@ -680,7 +680,7 @@ parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
   considera a conexão expirada após 10 s sem sinal. Um `sweep` periódico emite
   `connection.lost` quando o gateway para sem avisar.
 - A API expõe `GET /api/machines/:id/connection`, resolvendo o código da máquina
-  (`machine-01`) a partir do id numérico da URL.
+  (`Linha-01`) a partir do id numérico da URL.
 - O stream SSE publica eventos `connection` com `action: 'update'`,
   `'connection.lost'` e `'connection.restored'`.
 - O dashboard mostra um badge separado: **Linha: operando** (verde),
@@ -838,3 +838,45 @@ mostrar `Sem comunicação`.
   serviço ativo, ele dura no máximo um ciclo de polling.
 - A validação continua estrita para valores inválidos como `1`, `'true'` ou
   objeto; apenas `null` foi acrescentado ao contrato do heartbeat.
+
+---
+
+# ADR-024 - Padronização dos códigos de linha como `Linha-NN`
+
+**Status:** Aceita
+
+**Contexto:**
+
+O código `machine-01` veio do simulador original e foi usado como padrão no
+gateway, no Compose, na API e na documentação. Ele é apenas um identificador de
+texto — não tem relação com o NetId ADS nem com o CLP — mas não escala quando a
+PI40 passa a receber telemetria de mais de uma linha. Além disso, o gateway
+publica sempre o mesmo `machineId`, e o backend cria uma nova linha na tabela
+`machines` sempre que recebe um código ainda não visto; trocar só a configuração
+do gateway criaria uma máquina nova (id 2) e deixaria todo o histórico no id 1.
+
+**Decisão:**
+
+- O código da linha de envase passa a ser `Linha-01`. O padrão para linhas
+  adicionais é `Linha-NN` (`Linha-02`, `Linha-03`, ...), com `name` igual ao
+  `code`.
+- O valor é configurável por `GATEWAY_MACHINE_ID` no XML do serviço, por
+  `MACHINE_ID`/`GATEWAY_MACHINE_ID` no `.env` e por `SMOKE_MACHINE_ID` no smoke
+  test; `Linha-01` é apenas o padrão.
+- Na implantação com dados existentes, o gateway foi parado, o registro foi
+  renomeado com `UPDATE machines SET code = 'Linha-01', name = 'Linha-01' WHERE
+  code = 'machine-01'` e o serviço foi reiniciado. O `id` numérico (1) foi
+  mantido, preservando telemetria, produção, alertas, manutenção e o acumulado.
+- Nenhum símbolo ADS, rota estática ou comando para o CLP foi alterado.
+
+**Consequências:**
+
+- O dashboard mostra uma única máquina, agora chamada `Linha-01`, e o acumulado
+  continua associado ao id 1.
+- Outras linhas podem ser adicionadas apontando um gateway com outro
+  `GATEWAY_MACHINE_ID`; cada código gera sua própria linha, heartbeat, série de
+  telemetria e acumulado.
+- A URL da API continua usando o id numérico; o texto `Linha-NN` aparece como
+  `code`/`name` e no payload de telemetria.
+- A troca em um host com dados exige parar o gateway antes do `UPDATE`, para não
+  recriar a linha antiga com o código antigo no próximo ciclo de polling.")}

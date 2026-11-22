@@ -48,7 +48,7 @@ function loadConfig(env = process.env) {
 
   return {
     protocol,
-    machineId: env.GATEWAY_MACHINE_ID || env.MACHINE_ID || 'machine-01',
+    machineId: env.GATEWAY_MACHINE_ID || env.MACHINE_ID || 'Linha-01',
     pollMs,
     backendUrl: env.BACKEND_URL || 'http://localhost:3000',
     plcVersion: env.PLC_VERSION || null,

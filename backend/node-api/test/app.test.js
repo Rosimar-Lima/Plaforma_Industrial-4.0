@@ -8,7 +8,7 @@ const { createApp } = require('../src/app');
 
 function validPayload() {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp: '2026-01-01T00:00:00.000Z',
     plcVersion: '1.0.0',
     line: {
@@ -47,7 +47,7 @@ function createFakeRepository() {
       return { machineId: record.machineId, recordedAt: record.timestamp };
     },
     async listMachines() {
-      return [{ id: 1, code: 'machine-01', name: 'machine-01', location: null }];
+      return [{ id: 1, code: 'Linha-01', name: 'Linha-01', location: null }];
     },
     async listTelemetry(machineId, options) {
       telemetryCalls.push({ machineId, options });
@@ -250,7 +250,7 @@ test('POST /api/telemetry aceita payload válido', async () => {
     assert.equal(response.status, 202);
     const body = await response.json();
     assert.equal(body.status, 'accepted');
-    assert.equal(body.machineId, 'machine-01');
+    assert.equal(body.machineId, 'Linha-01');
     assert.equal(repository.calls.length, 1);
     assert.equal(repository.calls[0].production.filled, 10);
   } finally {
@@ -266,7 +266,7 @@ test('POST /api/telemetry rejeita payload inválido', async () => {
     const response = await fetch(`${app.baseUrl}/api/telemetry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ machineId: 'machine-01' }),
+      body: JSON.stringify({ machineId: 'Linha-01' }),
     });
 
     assert.equal(response.status, 400);
@@ -318,7 +318,7 @@ test('GET /api/machines lista máquinas', async () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.machines.length, 1);
-    assert.equal(body.machines[0].code, 'machine-01');
+    assert.equal(body.machines[0].code, 'Linha-01');
   } finally {
     await app.close();
   }
@@ -425,7 +425,7 @@ test('POST /api/telemetry publica a amostra no stream', async () => {
     assert.equal(response.status, 202);
     assert.equal(broadcasts.length, 1);
     assert.equal(broadcasts[0].event, 'telemetry');
-    assert.equal(broadcasts[0].data.machineId, 'machine-01');
+    assert.equal(broadcasts[0].data.machineId, 'Linha-01');
     assert.equal(broadcasts[0].data.line.step, 2);
   } finally {
     await app.close();
@@ -1001,7 +1001,7 @@ test('POST /api/telemetry publica reset do acumulado no stream', async () => {
 
 function validGatewayStatus(overrides = {}) {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     connected: true,
     running: false,
     lastReadAt: '2026-11-21T20:00:00.000Z',
@@ -1031,7 +1031,7 @@ test('POST /api/gateway/status aceita heartbeat e consulta connection', async ()
     assert.equal(connection.status, 200);
     const view = await connection.json();
     assert.equal(view.connected, true);
-    assert.equal(view.machineId, 'machine-01');
+    assert.equal(view.machineId, 'Linha-01');
   } finally {
     await app.close();
   }
@@ -1070,7 +1070,7 @@ test('POST /api/gateway/status rejeita payload inválido', async () => {
     const response = await fetch(`${app.baseUrl}/api/gateway/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ machineId: 'machine-01' }),
+      body: JSON.stringify({ machineId: 'Linha-01' }),
     });
 
     assert.equal(response.status, 400);

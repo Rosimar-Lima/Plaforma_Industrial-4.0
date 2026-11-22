@@ -24,7 +24,7 @@
   <!-- Variáveis do serviço têm prioridade sobre um eventual gateway/.env. -->
   <env name="INDUSTRIAL_PROTOCOL" value="ads"/>
   <env name="BACKEND_URL" value="http://localhost:3000"/>
-  <env name="GATEWAY_MACHINE_ID" value="machine-01"/>
+  <env name="GATEWAY_MACHINE_ID" value="Linha-01"/>
   <env name="GATEWAY_POLL_MS" value="1000"/>
   <env name="ADS_TARGET_AMS_NET_ID" value="39.90.64.65.1.1"/>
   <env name="ADS_TARGET_PORT" value="851"/>

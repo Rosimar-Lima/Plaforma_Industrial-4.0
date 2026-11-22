@@ -58,11 +58,11 @@ test('broadcast envia eventos para os clientes', () => {
   const res = fakeResponse();
   hub.subscribe({}, res);
 
-  hub.broadcast('telemetry', { machineId: 'machine-01', line: { step: 2 } });
+  hub.broadcast('telemetry', { machineId: 'Linha-01', line: { step: 2 } });
 
   const output = res.writes.join('');
   assert.match(output, /event: telemetry/);
-  assert.match(output, /machine-01/);
+  assert.match(output, /Linha-01/);
   assert.match(output, /"step":2/);
 
   hub.closeAll();

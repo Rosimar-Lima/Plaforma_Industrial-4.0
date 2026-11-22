@@ -175,7 +175,7 @@ test('telemetria gerada a partir da leitura ADS mantém contadores reais', async
   await adapter.connect();
   const values = await adapter.readTags();
   const telemetry = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     values,
     timestamp: '2026-11-21T19:00:00.000Z',
   });

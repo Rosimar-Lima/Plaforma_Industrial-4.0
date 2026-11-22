@@ -7,7 +7,7 @@ const { createRepository } = require('../src/repository');
 
 function record({ produced, good, timestamp }) {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     plcVersion: '1.0.0',
     raw: {},

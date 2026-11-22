@@ -152,7 +152,7 @@ function createApp({
     }
 
     try {
-      // O gateway reporta o código (machine-01), mas a URL usa o id numérico.
+      // O gateway reporta o código (Linha-01), mas a URL usa o id numérico.
       // Resolve o código para consultar o mesmo heartbeat usado no stream.
       const machines = await repository.listMachines();
       const machine = machines.find((item) => Number(item.id) === machineId);

@@ -37,7 +37,7 @@ test('configuração de produção do ADS está explícita no serviço', () => {
   const expected = {
     INDUSTRIAL_PROTOCOL: 'ads',
     BACKEND_URL: 'http://localhost:3000',
-    GATEWAY_MACHINE_ID: 'machine-01',
+    GATEWAY_MACHINE_ID: 'Linha-01',
     GATEWAY_POLL_MS: '1000',
     ADS_TARGET_AMS_NET_ID: '39.90.64.65.1.1',
     ADS_TARGET_PORT: '851',

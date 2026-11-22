@@ -208,7 +208,7 @@ paths:
                 data: {}
 
                 event: telemetry
-                data: {"machineId":"machine-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
+                data: {"machineId":"Linha-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
 
                 event: maintenance
                 data: {"machineId":1,"action":"created","order":{"id":3,"component_code":"fill-valve","status":"planned"}}
@@ -593,7 +593,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          example: machine-01
+          example: Linha-01
         timestamp:
           type: string
           format: date-time
@@ -624,10 +624,10 @@ components:
           type: integer
         code:
           type: string
-          example: machine-01
+          example: Linha-01
         name:
           type: string
-          example: machine-01
+          example: Linha-01
         location:
           type: string
           nullable: true
@@ -954,7 +954,7 @@ components:
           example: accepted
         machineId:
           type: string
-          example: machine-01
+          example: Linha-01
         recordedAt:
           type: string
           format: date-time
