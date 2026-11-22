@@ -113,7 +113,9 @@ arquivo de mapa.
 
 O AMS Net ID `39.90.64.65.1.1` é uma rota ADS estática configurada no host; ele
 não deve ser usado como endereço IP (`ping 39.90.64.65` falha). Em caso de
-falha, confira a rota no TwinCAT e se o runtime está em `Run`.
+falha com `readTcSystemState(): Reading TwinCAT system state failed`, confira
+no TwinCAT XAE se o PLC está conectado/ativado e se o runtime está em `Run` —
+um PLC desconectado no XAE produz exatamente esse erro.
 
 ### OPC-UA
 
