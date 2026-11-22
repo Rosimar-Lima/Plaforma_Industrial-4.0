@@ -685,12 +685,14 @@ parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
   `'connection.lost'` e `'connection.restored'`.
 - O dashboard mostra um badge separado: **Linha: operando** (verde),
   **Linha: parada** (âmbar, CLP responde) e **Linha: sem comunicação** (vermelho).
-  O badge existente “Online/Offline” continua representando apenas a conexão
-  do dashboard com a API.
+  O badge antigo “Tempo real” (dashboard↔API) foi removido por ser redundante:
+  o badge **Linha** já mostra o estado relevante da comunicação. O fallback para
+  polling continua ativo quando o SSE falha, apenas sem indicador visual próprio.
 - O card principal **Operação** reflete o mesmo estado, com prioridade para a
-  comunicação: `Sem comunicação` (vermelho), `Parada` (âmbar) ou
-  `Em operação` (verde). Assim a perda de comunicação não passa despercebida
-  no indicador principal.
+  comunicação: `Linha sem comunicação` (vermelho), `Operação Parada` (âmbar) ou
+  `Linha em operação` (verde). Assim a perda de comunicação não passa despercebida
+  no indicador principal. O texto usa fonte menor e quebra de linha para não
+  ultrapassar as bordas do card.
 - O status não é persistido em banco: ele representa o estado atual da sessão,
   não um histórico de falhas.
 

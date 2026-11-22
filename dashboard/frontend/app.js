@@ -44,7 +44,6 @@ const state = {
   selectedOrderId: null,
   stream: null,
   streamOnline: false,
-  pollOk: false,
   lineConnection: null,
 };
 
@@ -52,7 +51,6 @@ const el = {
   machineSelect: document.getElementById('machine-select'),
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
-  connection: document.getElementById('connection'),
   lineConnection: document.getElementById('line-connection'),
   lastUpdate: document.getElementById('last-update'),
   running: document.getElementById('stat-running'),
@@ -103,23 +101,6 @@ async function getJson(url) {
     throw new Error(`HTTP ${response.status} em ${url}`);
   }
   return response.json();
-}
-
-function updateConnection() {
-  let label = 'Offline';
-  let mode = 'offline';
-
-  if (state.streamOnline) {
-    label = 'Tempo real';
-    mode = 'online';
-  } else if (state.pollOk) {
-    label = 'Polling';
-    mode = 'polling';
-  }
-
-  el.connection.textContent = label;
-  el.connection.classList.remove('online', 'polling', 'offline');
-  el.connection.classList.add(mode);
 }
 
 function renderLineConnection(connection) {
@@ -216,7 +197,7 @@ function renderOperation() {
   const connection = state.lineConnection;
 
   if (connection && connection.state === 'offline') {
-    el.running.textContent = 'Sem comunicação';
+    el.running.textContent = 'Linha sem comunicação';
     el.running.style.color = 'var(--danger)';
     el.running.title = 'O gateway não consegue ler o CLP da linha';
     return;
@@ -232,7 +213,7 @@ function renderOperation() {
   }
 
   const operando = latest.payload?.line?.running === true;
-  el.running.textContent = operando ? 'Em operação' : 'Parada';
+  el.running.textContent = operando ? 'Linha em operação' : 'Operação Parada';
   el.running.style.color = operando ? 'var(--ok)' : 'var(--warn)';
 }
 
@@ -844,12 +825,8 @@ async function refreshTelemetry() {
     );
     state.samples = data.samples || [];
     renderTelemetry(state.samples);
-    state.pollOk = true;
-    updateConnection();
   } catch (error) {
     console.error(error);
-    state.pollOk = false;
-    updateConnection();
   }
 }
 
@@ -898,8 +875,6 @@ async function loadMachines() {
       renderProductionTotal(null);
       renderLineConnection(null);
       drawChart([]);
-      state.pollOk = true;
-      updateConnection();
       return false;
     }
 
@@ -912,13 +887,9 @@ async function loadMachines() {
       state.machines.find((machine) => String(machine.id) === select.value) ?? state.machines[0];
     state.machineId = selected.id;
     state.machineCode = selected.code;
-    state.pollOk = true;
-    updateConnection();
     return true;
   } catch (error) {
     console.error(error);
-    state.pollOk = false;
-    updateConnection();
     return false;
   }
 }
@@ -993,7 +964,6 @@ function connectStream() {
 
   source.addEventListener('open', () => {
     state.streamOnline = true;
-    updateConnection();
   });
 
   source.addEventListener('telemetry', (event) => {
@@ -1012,7 +982,6 @@ function connectStream() {
     ].slice(0, TELEMETRY_LIMIT);
     renderTelemetry(state.samples);
     state.streamOnline = true;
-    updateConnection();
   });
 
   source.addEventListener('production', (event) => {
@@ -1050,7 +1019,6 @@ function connectStream() {
 
   source.addEventListener('error', () => {
     state.streamOnline = false;
-    updateConnection();
   });
 }
 

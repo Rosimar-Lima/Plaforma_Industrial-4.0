@@ -7,6 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const APP_PATH = path.join(__dirname, '..', 'app.js');
+const HTML_PATH = path.join(__dirname, '..', 'index.html');
 
 function criarElemento() {
   return {
@@ -78,34 +79,34 @@ function renderizar(nome, connection, amostra, textoEsperado, corEsperada, titul
   assert.equal(titulo, tituloEsperado, `${nome}: tooltip do card`);
 }
 
-test('card Operação mostra "Sem comunicação" quando o gateway não lê o CLP', () => {
+test('card Operação mostra "Linha sem comunicação" quando o gateway não lê o CLP', () => {
   renderizar(
     'offline',
     { state: 'offline', connected: false, error: 'ADS fora' },
     [{ payload: { line: { running: false } } }],
-    'Sem comunicação',
+    'Linha sem comunicação',
     'var(--danger)',
     'O gateway não consegue ler o CLP da linha'
   );
 });
 
-test('card Operação mostra "Parada" quando o CLP responde com bRunning=false', () => {
+test('card Operação mostra "Operação Parada" quando o CLP responde com bRunning=false', () => {
   renderizar(
     'online/parada',
     { state: 'online', connected: true, running: false },
     [{ payload: { line: { running: false } } }],
-    'Parada',
+    'Operação Parada',
     'var(--warn)',
     ''
   );
 });
 
-test('card Operação mostra "Em operação" quando o CLP responde com bRunning=true', () => {
+test('card Operação mostra "Linha em operação" quando o CLP responde com bRunning=true', () => {
   renderizar(
     'online/operando',
     { state: 'online', connected: true, running: true },
     [{ payload: { line: { running: true } } }],
-    'Em operação',
+    'Linha em operação',
     'var(--ok)',
     ''
   );
@@ -113,4 +114,12 @@ test('card Operação mostra "Em operação" quando o CLP responde com bRunning=
 
 test('card Operação mostra "—" antes da primeira amostra', () => {
   renderizar('sem dados', null, [], '—', 'var(--muted)', '');
+});
+
+test('dashboard não exibe o badge redundante "Tempo real"', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf8');
+  const js = fs.readFileSync(APP_PATH, 'utf8');
+
+  assert.doesNotMatch(html, /id="connection"/);
+  assert.doesNotMatch(js, /Tempo real/);
 });
