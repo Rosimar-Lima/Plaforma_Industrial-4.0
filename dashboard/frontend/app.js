@@ -12,6 +12,8 @@ const MONITORING_TRANSITION_MS = 1800;
 const MONITORING_STEP_MS = 70;
 const BOOT_DATE_KEY = 'pi40.boot.date';
 const BOOT_LIMIT_MS = 25000;
+const BOOT_MIN_VISIBLE_MS = 9000;
+const BOOT_STAGE_REVEAL_MS = 1100;
 const SYSTEM_STATUS_POLL_MS = 1000;
 
 const SHUTDOWN_STEPS = [
@@ -89,6 +91,9 @@ const state = {
     allowEnter: false,
     autoEntered: false,
     timer: null,
+    revealTimer: null,
+    revealed: 0,
+    startedAt: 0,
   },
   shutdown: {
     status: null,
@@ -542,11 +547,51 @@ function markBootDone() {
   }
 }
 
+function visibleBootStages() {
+  // As verificações reais continuam imediatas; apenas a apresentação é
+  // revelada aos poucos para que o usuário acompanhe o processo.
+  return state.monitoring.stages.map((stage, index) =>
+    index < state.boot.revealed
+      ? stage
+      : { ...stage, status: 'pending', detail: 'Aguardando verificação...' }
+  );
+}
+
+function clearBootRevealTimer() {
+  if (state.boot.revealTimer) {
+    clearInterval(state.boot.revealTimer);
+    state.boot.revealTimer = null;
+  }
+}
+
+function startBootReveal() {
+  clearBootRevealTimer();
+  state.boot.revealed = 0;
+  state.boot.startedAt = Date.now();
+  state.boot.revealTimer = setInterval(() => {
+    if (!state.boot.active) {
+      clearBootRevealTimer();
+      return;
+    }
+    if (state.boot.revealed >= state.monitoring.stages.length) {
+      clearBootRevealTimer();
+      return;
+    }
+    state.boot.revealed += 1;
+    renderBoot();
+  }, BOOT_STAGE_REVEAL_MS);
+}
+
 function renderBoot() {
-  const stages = state.monitoring.stages;
-  const percent = monitoringPercent();
+  const stages = visibleBootStages();
+  const realStages = state.monitoring.stages;
+  const doneCount = stages.filter((stage) => stage.status === 'done').length;
+  const percent = Math.round((doneCount / stages.length) * 100);
   const hasError = stages.some((stage) => stage.status === 'error');
-  const ready = percent === 100;
+  const fullyRevealed = state.boot.revealed >= realStages.length;
+  const minElapsed = Date.now() - state.boot.startedAt >= BOOT_MIN_VISIBLE_MS;
+  const ready = percent === 100 && fullyRevealed && minElapsed;
+  const checking = percent === 100 && fullyRevealed && !minElapsed;
   const canEnter = ready || hasError || state.boot.allowEnter;
 
   el.bootPercent.textContent = `${percent}%`;
@@ -555,12 +600,18 @@ function renderBoot() {
   renderStagesInto(el.bootStages, stages);
 
   el.bootEnter.disabled = !canEnter;
-  el.bootEnter.textContent = ready ? 'Entrar no painel' : 'Entrar em modo limitado';
+  el.bootEnter.textContent = ready
+    ? 'Entrar no painel'
+    : checking
+      ? 'Finalizando abertura...'
+      : 'Entrar em modo limitado';
   el.bootRetry.hidden = !hasError;
 
   let hint = 'Aguardando as verificações iniciais...';
   if (ready) {
     hint = 'Plataforma pronta. O painel está sendo atualizado em tempo real.';
+  } else if (checking) {
+    hint = 'Verificações concluídas. Finalizando a abertura do painel...';
   } else if (hasError) {
     const gateway = stageById('gateway');
     const plc = stageById('plc');
@@ -590,6 +641,7 @@ function enterDashboard() {
     clearTimeout(state.boot.timer);
     state.boot.timer = null;
   }
+  clearBootRevealTimer();
 
   const ready = monitoringPercent() === 100;
   markBootDone();
@@ -621,6 +673,7 @@ function retryBoot() {
   state.boot.allowEnter = false;
   state.boot.autoEntered = false;
   el.bootRetry.hidden = true;
+  startBootReveal();
   void startMonitoring();
   addMonitoringEvent('Nova tentativa de inicialização', 'Reverificando a prontidão da plataforma.', 'info');
 }
@@ -630,6 +683,7 @@ function enterBoot() {
   state.boot.allowEnter = false;
   state.boot.autoEntered = false;
   el.bootScreen.hidden = false;
+  startBootReveal();
   renderBoot();
 
   state.boot.timer = setTimeout(() => {

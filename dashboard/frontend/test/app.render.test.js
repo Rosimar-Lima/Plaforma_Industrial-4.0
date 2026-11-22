@@ -96,8 +96,20 @@ function carregarApp(opcoes = {}) {
       '  renderOperation();' +
       '  return { texto: el.running.textContent, cor: el.running.style.color };' +
       '};' +
+      '\nglobalThis.__etapasProntas = () => {' +
+      '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
+      '  renderBoot();' +
+      '};' +
+      '\nglobalThis.__bootProgresso = (reveladas, decorridoMs) => {' +
+      '  state.boot.revealed = reveladas;' +
+      '  state.boot.startedAt = Date.now() - decorridoMs;' +
+      '  renderBoot();' +
+      '  return { percent: el.bootPercent.textContent, hidden: el.bootScreen.hidden, hint: el.bootHint.textContent };' +
+      '};' +
       '\nglobalThis.__pronto = () => {' +
       '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
+      '  state.boot.revealed = state.monitoring.stages.length;' +
+      '  state.boot.startedAt = Date.now() - 60000;' +
       '  renderBoot();' +
       '};' +
       '\nglobalThis.__statusSistema = (status) => renderShutdown(status);' +
@@ -196,6 +208,33 @@ test('Tela de inicialização aparece no primeiro acesso e abre o painel automat
 
   contexto.__pronto();
   assert.equal(obter('boot-screen').hidden, true);
+  assert.equal(armazenamento.valor, chaveHoje());
+});
+
+test('Abertura revela as etapas gradualmente e entra só depois do tempo mínimo', () => {
+  const armazenamento = {
+    valor: null,
+    getItem() { return this.valor; },
+    setItem(chave, valor) { this.valor = valor; },
+  };
+  const { contexto, obter } = carregarApp({ localStorage: armazenamento });
+
+  contexto.__etapasProntas();
+  let resultado = contexto.__bootProgresso(2, 2500);
+  assert.equal(resultado.percent, '33%');
+  assert.equal(resultado.hidden, false);
+  assert.equal(obter('boot-enter').disabled, true);
+  assert.match(obter('boot-stages').innerHTML, /Aguardando verificação/);
+  assert.doesNotMatch(obter('boot-stages').innerHTML, /Acumulado de produção carregado/);
+
+  resultado = contexto.__bootProgresso(6, 5000);
+  assert.equal(resultado.percent, '100%');
+  assert.equal(resultado.hidden, false);
+  assert.match(resultado.hint, /Finalizando a abertura/);
+  assert.equal(obter('boot-enter').disabled, true);
+
+  resultado = contexto.__bootProgresso(6, 10000);
+  assert.equal(resultado.hidden, true);
   assert.equal(armazenamento.valor, chaveHoje());
 });
 

@@ -957,3 +957,36 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
   (consequência já registrada na ADR-021).
 
 ---
+
+# ADR-026 — Apresentação gradual da abertura da PI40
+
+**Status:** Aceita
+
+**Contexto:**
+
+Com API, gateway e CLP já disponíveis, as seis verificações da tela
+**Preparando a PI40** terminavam em poucos milissegundos. O painel era aberto
+antes de o operador conseguir acompanhar as etapas, dando a impressão de que a
+inicialização não tinha feito nada.
+
+**Decisão:**
+
+- As verificações reais continuam sendo executadas normalmente e imediatamente
+  (`/health`, SSE, heartbeat, leitura ADS, telemetria e banco).
+- A tela revela os estágios um a um, a cada `BOOT_STAGE_REVEAL_MS` (1,1 s), e
+  mantém a barra de progresso coerente apenas com o que já foi revelado.
+- A entrada automática no painel exige: todas as verificações reais `done`,
+  todos os estágios revelados e no mínimo `BOOT_MIN_VISIBLE_MS` (9 s) desde o
+  início da tela. Até lá o botão fica desabilitado com “Finalizando abertura...”.
+- Falhas continuam liberando o modo limitado na etapa em que aparecem; o limite
+  de 25 s para entrada manual também permanece.
+
+**Consequências:**
+
+- O operador acompanha a sequência de prontidão sem retardar serviços nem a
+  coleta de telemetria: apenas a apresentação é cadenciada.
+- Um serviço que ainda não responde continua sendo refletido na etapa real
+  correspondente; revelar uma etapa não a marca como `done`.
+- O fluxo de encerramento e o acumulado no banco não foram alterados.
+
+---
