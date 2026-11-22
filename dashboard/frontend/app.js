@@ -87,12 +87,17 @@ const state = {
   boot: {
     active: false,
     allowEnter: false,
+    autoEntered: false,
     timer: null,
   },
   shutdown: {
     status: null,
     phase: 'confirm',
     timer: null,
+    lineTimer: null,
+    lineState: 'unknown',
+    lineConfirmed: false,
+    closeScheduled: false,
     startedAt: 0,
     apiLost: false,
     triggered: false,
@@ -120,6 +125,10 @@ const el = {
   shutdownSteps: document.getElementById('shutdown-steps'),
   shutdownInstruction: document.getElementById('shutdown-instruction'),
   shutdownFinal: document.getElementById('shutdown-final'),
+  shutdownLineTitle: document.getElementById('shutdown-line-title'),
+  shutdownLineDetail: document.getElementById('shutdown-line-detail'),
+  shutdownLineConfirm: document.getElementById('shutdown-line-confirm'),
+  shutdownLineCheckbox: document.getElementById('shutdown-line-checkbox'),
   machineSelect: document.getElementById('machine-select'),
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
@@ -517,7 +526,11 @@ function localDayKey() {
 }
 
 function shouldShowBoot() {
+  // O atalho de inicialização abre a URL com ?boot=1 para repetir a abertura
+  // mesmo quando o dashboard já foi visto neste dia.
   try {
+    const params = new URLSearchParams(window.location?.search || '');
+    if (params.get('boot') === '1') return true;
     return localStorage?.getItem(BOOT_DATE_KEY) !== localDayKey();
   } catch (error) {
     return true;
@@ -565,6 +578,12 @@ function renderBoot() {
   el.bootHint.textContent = hint;
   el.bootHint.classList.remove('error');
   if (hasError) el.bootHint.classList.add('error');
+
+  if (ready && !state.boot.autoEntered) {
+    state.boot.autoEntered = true;
+    addMonitoringEvent('Prontidão confirmada', 'Abrindo o painel automaticamente.', 'ok');
+    enterDashboard();
+  }
 }
 
 function enterDashboard() {
@@ -603,6 +622,7 @@ function retryBoot() {
   state.monitoring.targetProgress = 0;
   state.monitoring.stages = createStageState();
   state.boot.allowEnter = false;
+  state.boot.autoEntered = false;
   el.bootRetry.hidden = true;
   void startMonitoring();
   addMonitoringEvent('Nova tentativa de inicialização', 'Reverificando a prontidão da plataforma.', 'info');
@@ -611,6 +631,7 @@ function retryBoot() {
 function enterBoot() {
   state.boot.active = true;
   state.boot.allowEnter = false;
+  state.boot.autoEntered = false;
   el.bootScreen.hidden = false;
   renderBoot();
 
@@ -691,10 +712,38 @@ function renderShutdown(status) {
   const manualFallback = state.shutdown.phase === 'progress' && !state.shutdown.triggered;
   el.shutdownInstruction.hidden = !manualFallback || finished;
   el.shutdownCopy.hidden = !manualFallback;
-  el.shutdownConfirm.disabled = state.shutdown.phase !== 'confirm';
+  const canConfirm =
+    state.shutdown.phase === 'confirm' &&
+    state.shutdown.lineState === 'offline' &&
+    state.shutdown.lineConfirmed;
+  el.shutdownConfirm.disabled = !canConfirm;
   el.shutdownConfirm.textContent =
-    state.shutdown.phase === 'confirm' ? 'Confirmar encerramento' : 'Encerramento iniciado';
+    state.shutdown.phase === 'confirm' ? 'Encerrar a PI40' : 'Encerramento iniciado';
   el.shutdownDismiss.textContent = state.shutdown.phase === 'confirm' ? 'Cancelar' : 'Fechar';
+
+  if (stateName === 'done' && !state.shutdown.closeScheduled) {
+    state.shutdown.closeScheduled = true;
+    el.shutdownFinal.textContent = 'PI40 encerrada. Fechando esta página...';
+    scheduleBrowserClose();
+  }
+}
+
+function scheduleBrowserClose() {
+  if (typeof window === 'undefined' || !window.close || !window.location) return;
+  setTimeout(() => {
+    try {
+      window.close();
+    } catch (error) {
+      // Navegadores bloqueiam close() em abas abertas pelo usuário.
+    }
+    setTimeout(() => {
+      try {
+        if (!window.closed) window.location.replace('about:blank');
+      } catch (error) {
+        // Ambiente sem navegação programática (testes, por exemplo).
+      }
+    }, 1000);
+  }, 2500);
 }
 
 function copyShutdownCommand() {
@@ -774,18 +823,92 @@ async function pollSystemStatus() {
   stopSystemStatusPolling();
 }
 
+function renderShutdownLineState(connection) {
+  const lineState = state.shutdown.lineState;
+  el.shutdownLineConfirm.hidden = lineState !== 'offline';
+
+  if (lineState === 'offline') {
+    el.shutdownLineTitle.textContent = 'Linha desligada';
+    el.shutdownLineTitle.className = 'line-offline';
+    el.shutdownLineDetail.textContent =
+      'O CLP não responde. Confirme que a linha física foi desligada antes de encerrar a PI40.';
+  } else if (lineState === 'online') {
+    el.shutdownLineTitle.textContent =
+      connection?.running === false ? 'Linha apenas parada' : 'Linha em operação';
+    el.shutdownLineTitle.className =
+      connection?.running === false ? 'line-stopped' : 'line-online';
+    el.shutdownLineDetail.textContent =
+      'O CLP ainda responde. Desligue a linha física: encerrar com a linha apenas parada não é permitido.';
+  } else {
+    el.shutdownLineTitle.textContent = 'Estado da linha não confirmado';
+    el.shutdownLineTitle.className = 'line-unknown';
+    el.shutdownLineDetail.textContent =
+      'Aguardando heartbeat do gateway. Não é possível liberar o encerramento sem essa leitura.';
+  }
+
+  if (lineState !== 'offline') {
+    state.shutdown.lineConfirmed = false;
+    el.shutdownLineCheckbox.checked = false;
+  }
+  renderShutdown(null);
+}
+
+function applyShutdownLineState(connection) {
+  const reported = connection?.state;
+  state.shutdown.lineState =
+    reported === 'offline' ? 'offline' : reported === 'online' ? 'online' : 'unknown';
+  state.lineConnection = connection ?? null;
+  renderShutdownLineState(connection);
+}
+
+async function refreshShutdownLineState() {
+  let connection = state.lineConnection;
+  if (state.machineId) {
+    try {
+      connection = await getJson(`/api/machines/${state.machineId}/connection`);
+    } catch (error) {
+      // Mantém a última leitura conhecida; o estado só libera o botão se for offline.
+    }
+  }
+  applyShutdownLineState(connection);
+}
+
+function startLineStatePolling() {
+  if (state.shutdown.lineTimer) return;
+  state.shutdown.lineTimer = setInterval(() => {
+    if (state.shutdown.phase === 'confirm' && !el.shutdownModal.hidden) {
+      void refreshShutdownLineState();
+    }
+  }, 2000);
+}
+
+function stopLineStatePolling() {
+  if (state.shutdown.lineTimer) {
+    clearInterval(state.shutdown.lineTimer);
+    state.shutdown.lineTimer = null;
+  }
+}
+
 function openShutdownModal() {
   state.shutdown.phase = 'confirm';
   state.shutdown.apiLost = false;
   state.shutdown.triggered = false;
+  state.shutdown.closeScheduled = false;
+  state.shutdown.lineState = 'unknown';
+  state.shutdown.lineConfirmed = false;
   state.shutdown.status = null;
+  el.shutdownLineCheckbox.checked = false;
+  el.shutdownFinal.textContent = 'É seguro desligar o computador.';
   el.shutdownModal.hidden = false;
   renderShutdown(null);
+  startLineStatePolling();
+  void refreshShutdownLineState();
   el.shutdownConfirm.focus();
 }
 
 function closeShutdownModal() {
   el.shutdownModal.hidden = true;
+  stopLineStatePolling();
   stopSystemStatusPolling();
 }
 
@@ -812,13 +935,15 @@ async function triggerSystemAction() {
 
 function confirmShutdown() {
   if (state.shutdown.phase !== 'confirm') return;
+  if (state.shutdown.lineState !== 'offline' || !state.shutdown.lineConfirmed) return;
 
+  stopLineStatePolling();
   state.shutdown.phase = 'progress';
   state.shutdown.startedAt = Date.now();
   state.shutdown.status = {
     state: 'running',
     action: 'Stop',
-    message: 'Dashboard pausado. Execute o atalho ENCERRAR-PI40.cmd para continuar.',
+    message: 'Dashboard pausado. Aguardando a confirmação do encerramento no host.',
     steps: [
       {
         id: 'dashboard',
@@ -1677,6 +1802,10 @@ el.shutdownDismiss.addEventListener('click', closeShutdownModal);
 el.shutdownModal.querySelector('[data-close-shutdown]').addEventListener('click', closeShutdownModal);
 el.shutdownConfirm.addEventListener('click', confirmShutdown);
 el.shutdownCopy.addEventListener('click', copyShutdownCommand);
+el.shutdownLineCheckbox.addEventListener('change', () => {
+  state.shutdown.lineConfirmed = el.shutdownLineCheckbox.checked;
+  renderShutdown(null);
+});
 el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
 el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
 

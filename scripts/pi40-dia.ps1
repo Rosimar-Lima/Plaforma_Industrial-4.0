@@ -161,8 +161,8 @@ switch ($Action) {
             'dashboard|Pausar dashboard e stream|Ao detectar esta ação, o painel encerra o monitoramento e fecha o SSE.',
             'gateway|Parar serviço PI40Gateway|Interrompe a leitura ADS; nenhum comando é escrito no CLP.',
             'persistence|Confirmar últimos dados no banco|Conta as amostras já persistidas no PostgreSQL.',
-            'containers|Parar backend e PostgreSQL|Usa docker compose stop; o volume do banco não é removido.',
-            'safe|Ambiente seguro|Ao concluir, é seguro desligar o computador.'
+            'containers|Parar todos os containers|Usa docker compose stop; o volume do banco não é removido.',
+            'safe|Ambiente seguro|Confere que nenhum processo da PI40 ficou ativo.'
         )
 
         $current = 'dashboard'
@@ -188,16 +188,24 @@ switch ($Action) {
             Set-Step $current 'done' "$samples amostras persistidas no PostgreSQL."
 
             $current = 'containers'
-            Set-Step $current 'active' 'Parando backend e PostgreSQL...'
-            Invoke-Docker -DockerArguments @('compose', 'stop', 'backend', 'postgres')
+            Set-Step $current 'active' 'Parando backend, PostgreSQL e simulador...'
+            Invoke-Docker -DockerArguments @('compose', 'stop')
             $running = (& (Get-DockerCommand) compose ps --status running --services).Trim()
             if ($running) {
                 throw "Containers ainda ativos: $running"
             }
-            Set-Step $current 'done' 'Backend e PostgreSQL parados; volume preservado.'
+            Set-Step $current 'done' 'Todos os containers parados; volume do banco preservado.'
 
             $current = 'safe'
-            Set-Step $current 'done' 'É seguro desligar o computador. Não use docker compose down -v.'
+            Set-Step $current 'active' 'Conferindo processos remanescentes...'
+            $remanescentes = @(Get-CimInstance Win32_Process | Where-Object {
+                $_.CommandLine -match 'gateway[\\/]src[\\/]index\.js|plc-simulator\.js|node-api[\\/]server\.js'
+            })
+            if ($remanescentes.Count -gt 0) {
+                $nomes = ($remanescentes | ForEach-Object { "PID $($_.ProcessId)" }) -join ', '
+                throw "Processos da PI40 ainda ativos: $nomes"
+            }
+            Set-Step $current 'done' 'Nenhum processo da PI40 em execução. Não use docker compose down -v.'
             Write-Status -State 'done' -Message 'Encerramento seguro concluído.'
             Write-Host 'PI40 encerrada com segurança. É seguro desligar o computador.'
         }
@@ -259,7 +267,7 @@ switch ($Action) {
 
             $current = 'ready'
             if ($online) {
-                Set-Step $current 'done' 'Abra http://localhost:3000/ para acompanhar a PI40.'
+                Set-Step $current 'done' 'Abrindo a tela de inicialização em http://localhost:3000/?boot=1.'
                 Write-Status -State 'done' -Message 'PI40 pronta para uso.'
             }
             else {
@@ -267,8 +275,8 @@ switch ($Action) {
                 Write-Status -State 'error' -Message 'PI40 no ar; a linha ainda não está respondendo.'
             }
 
-            Start-Process 'http://localhost:3000/'
-            Write-Host 'PI40 iniciada. Abra http://localhost:3000/'
+            Start-Process 'http://localhost:3000/?boot=1'
+            Write-Host 'PI40 iniciada. Tela de inicialização: http://localhost:3000/?boot=1'
         }
         catch {
             Set-Step $current 'error' $_.Exception.Message

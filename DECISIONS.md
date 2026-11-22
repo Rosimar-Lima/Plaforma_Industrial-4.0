@@ -901,14 +901,20 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
 
 **Decisão:**
 
-- O dashboard ganha uma tela de inicialização em tela cheia no primeiro acesso
-  do dia. Ela reaproveita os seis estágios já existentes (API, stream, gateway,
-  CLP, telemetria e banco), mostra progresso, eventos e ações de diagnóstico,
-  nova tentativa e entrada em modo limitado. A data é guardada em `localStorage`
-  (`pi40.boot.date`), então recarregar no mesmo dia não repete a tela.
-- O botão **Encerrar dia** abre um modal de confirmação que pausa o dashboard,
-  fecha o SSE e acompanha o progresso do encerramento. As cinco etapas são
-  exibidas com o mesmo componente de estágios do diagnóstico.
+- O dashboard ganha uma tela de inicialização em tela cheia. Ela reaproveita os
+  seis estágios já existentes (API, stream, gateway, CLP, telemetria e banco),
+  mostra progresso, eventos e ações de diagnóstico, nova tentativa e entrada em
+  modo limitado. Quando todos os estágios ficam `done`, o painel é aberto
+  automaticamente, sem exigir clique. A data é guardada em `localStorage`
+  (`pi40.boot.date`); `INICIAR-PI40.cmd` abre `?boot=1` para repetir a tela a cada
+  inicialização, enquanto um `F5` no mesmo dia volta direto ao painel.
+- O botão **Encerrar dia** abre um modal que consulta o estado da linha. O
+  encerramento só é liberado quando `/api/machines/:id/connection` estiver
+  `offline` (sem leitura ADS) **e** o operador confirmar que a linha física foi
+  desligada. Com heartbeat ativo — inclusive com `running=false` (linha apenas
+  parada) — o botão fica bloqueado. O modal atualiza esse estado a cada 2 s.
+  Depois de confirmado, ele pausa o dashboard, fecha o SSE e mostra as cinco
+  etapas com o mesmo componente de estágios do diagnóstico.
 - Quem executa as operações é o script local `scripts/pi40-dia.ps1`, com ações
   `Start`, `Stop` e `Status`. O gateway, já rodando como serviço Windows sob
   `LocalSystem`, vigia o arquivo `runtime/system-command.json` e dispara o script
@@ -922,8 +928,11 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
   `GET /api/system/status`.
 - Os atalhos `INICIAR-PI40.cmd` e `ENCERRAR-PI40.cmd` permanecem como caminho
   manual alternativo, útil se o agente estiver indisponível.
-- O encerramento usa `docker compose stop`, nunca `down -v`. Antes de parar os
-  containers, o script conta as amostras persistidas. Não há escrita no CLP.
+- O encerramento usa `docker compose stop` para **todos** os serviços (backend,
+  PostgreSQL e simulador), nunca `down -v`. Antes de parar os containers, o
+  script conta as amostras persistidas; depois, verifica se sobrou algum processo
+  da PI40. Não há escrita no CLP. Ao concluir, o dashboard tenta fechar a aba e,
+  se o navegador bloquear `window.close()`, substitui a página por `about:blank`.
 - Como o backend é parado no penúltimo passo, o dashboard infere a conclusão
   quando o endpoint deixa de responder logo após a etapa `containers` ficar
   ativa; a validação final de containers parados é feita pelo próprio script.
@@ -932,8 +941,9 @@ backend roda em um container Linux, sem acesso direto ao PowerShell do host.
 
 - O operador vê o motivo da ausência de dados já na abertura, com instrução
   específica para o erro de ADS/TwinCAT encontrado na integração real.
-- O desligamento deixa de depender de decorar comandos e termina com a mensagem
-  "É seguro desligar o computador", sem apagar volume nem histórico.
+- O desligamento deixa de depender de decorar comandos. Só acontece com a linha
+  fisicamente desligada (confirmada pelo operador), para todos os containers e
+  processos, sem apagar volume nem histórico, e fecha a página do dashboard.
 - O botão passou a acionar o encerramento diretamente, sem pedir que o operador
   execute o atalho. Não há execução remota irrestrita: nenhuma porta é aberta,
   o arquivo de comando exige token e expira, e o endpoint do backend exige

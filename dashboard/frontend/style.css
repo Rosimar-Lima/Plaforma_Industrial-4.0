@@ -1200,6 +1200,49 @@ button:hover {
   line-height: 1.5;
 }
 
+.shutdown-line-state {
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.shutdown-line-state strong {
+  font-size: 14px;
+}
+
+.shutdown-line-state strong.line-offline {
+  color: var(--ok);
+}
+
+.shutdown-line-state strong.line-stopped {
+  color: var(--warn);
+}
+
+.shutdown-line-state strong.line-online {
+  color: var(--accent);
+}
+
+.shutdown-line-state strong.line-unknown {
+  color: var(--muted);
+}
+
+.shutdown-line-state p {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.shutdown-line-state label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .shutdown-headline {
   display: flex;
   align-items: center;

@@ -344,7 +344,7 @@
           <div>
             <h3 id="shutdown-title">Encerramento seguro da PI40</h3>
             <p class="muted diagnostic-subtitle">
-              A linha física não é desligada; apenas a coleta de dados é interrompida.
+              A linha física deve estar desligada antes de encerrar a coleta de dados.
             </p>
           </div>
           <button
@@ -360,9 +360,19 @@
           <div class="shutdown-notice">
             <strong>Antes de continuar</strong>
             <p>
-              A linha de envase NÃO será desligada. Unidades produzidas enquanto a
-              PI40 estiver parada não são recuperadas por ADS depois.
+              Desligue a linha de envase fisicamente. Se o CLP ainda responder —
+              mesmo com a linha apenas parada — o encerramento fica bloqueado.
             </p>
+          </div>
+          <div class="shutdown-line-state">
+            <strong id="shutdown-line-title">Verificando a linha...</strong>
+            <p id="shutdown-line-detail" class="muted">
+              Consultando o estado da comunicação com o CLP.
+            </p>
+            <label id="shutdown-line-confirm" hidden>
+              <input type="checkbox" id="shutdown-line-checkbox" />
+              Confirmo que a linha física foi desligada.
+            </label>
           </div>
           <div class="shutdown-headline">
             <span id="shutdown-status" class="status-pill off">Confirmando</span>

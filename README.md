@@ -46,19 +46,26 @@ Docker, use `cd backend/node-api && npm install && npm start` e o simulador com
 
 ## Inicialização e encerramento do dia
 
-No primeiro acesso do dia, o dashboard abre a tela **Preparando a PI40**. Ela
-verifica API, stream, gateway, CLP, telemetria e banco antes de liberar o painel.
-Se a comunicação com o CLP falhar, a tela mostra o que conferir (PLC conectado no
-TwinCAT XAE e runtime em `Run`) e oferece entrar em modo limitado. A data fica em
-`localStorage`, então um `F5` no mesmo dia volta direto ao painel.
+Ao abrir o dashboard, a tela **Preparando a PI40** aparece primeiro e verifica
+API, stream, gateway, CLP, telemetria e banco. Quando todas as verificações
+passam, o painel é aberto automaticamente, sem precisar clicar. Se a comunicação
+com o CLP falhar, a tela mostra o que conferir (PLC conectado no TwinCAT XAE e
+runtime em `Run`) e oferece entrar em modo limitado. O atalho
+`INICIAR-PI40.cmd` abre `http://localhost:3000/?boot=1` para forçar a tela de
+abertura; um `F5` no mesmo dia volta direto ao painel.
 
-Para encerrar, use o botão **Encerrar dia** no topo do painel e confirme. A tela
-pausa o dashboard e fecha o SSE, e aciona o encerramento diretamente: o backend
-escreve o pedido em `runtime/system-command.json` (bind mount compartilhado com
-o host) e o gateway, rodando como serviço Windows elevado, dispara
-`scripts/pi40-dia.ps1 -Action Stop`. O script para o gateway, confere as amostras
-persistidas e roda `docker compose stop` — nunca `down -v`, para preservar o
-volume do banco. Nenhum comando é escrito no CLP. O progresso pode ser
+Para encerrar, **desligue a linha física primeiro** e use o botão **Encerrar dia**
+no topo do painel. O botão só é liberado quando o CLP estiver sem comunicação e
+você confirmar que a linha foi desligada: uma linha apenas parada
+(`bRunning=false` com heartbeat ativo) bloqueia o encerramento. Ao confirmar, a
+tela pausa o dashboard, fecha o SSE e aciona o encerramento diretamente: o
+backend escreve o pedido em `runtime/system-command.json` (bind mount
+compartilhado com o host) e o gateway, rodando como serviço Windows elevado,
+dispara `scripts/pi40-dia.ps1 -Action Stop`. O script para o gateway e todos os
+containers (`docker compose stop` — nunca `down -v`, para preservar o volume do
+banco), confere as amostras persistidas e verifica se sobrou algum processo da
+PI40. Nenhum comando é escrito no CLP. Ao concluir, a página
+`http://localhost:3000/` é fechada automaticamente. O progresso pode ser
 acompanhado em `GET /api/system/status`.
 
 Nenhuma porta é aberta para essa ponte: o container e o host trocam apenas o
@@ -76,7 +83,8 @@ heartbeat e a telemetria de `Linha-01`. O simulador do Compose permanece parado
 enquanto o gateway real estiver ativo.
 
 Unidades produzidas enquanto a PI40 estiver encerrada não são recuperadas por
-ADS depois — a linha física continua funcionando, apenas a coleta para.
+ADS depois — por isso a linha física precisa estar desligada antes do
+encerramento.
 
 Alertas são gerados na ingestão quando o nível de envase sai dos limites
 configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além de

@@ -72,6 +72,7 @@ function carregarApp(opcoes = {}) {
     cancelAnimationFrame(id) { clearTimeout(id); },
     performance: { now: () => Date.now() },
     Intl,
+    URLSearchParams,
     Date,
     JSON,
     Math,
@@ -99,7 +100,9 @@ function carregarApp(opcoes = {}) {
       '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
       '  renderBoot();' +
       '};' +
-      '\nglobalThis.__statusSistema = (status) => renderShutdown(status);',
+      '\nglobalThis.__statusSistema = (status) => renderShutdown(status);' +
+      '\nglobalThis.__maquina = (id) => { state.machineId = id; };' +
+      '\nglobalThis.__estadoLinha = () => ({ state: state.shutdown.lineState, confirmed: state.shutdown.lineConfirmed });',
     contexto
   );
 
@@ -179,7 +182,7 @@ test('Atualizar abre popup centralizado quando o monitoramento está desligado',
   assert.equal(modal.hidden, true);
 });
 
-test('Tela de inicialização aparece no primeiro acesso do dia e libera o painel', () => {
+test('Tela de inicialização aparece no primeiro acesso e abre o painel automaticamente', () => {
   const armazenamento = {
     valor: null,
     getItem() { return this.valor; },
@@ -192,10 +195,6 @@ test('Tela de inicialização aparece no primeiro acesso do dia e libera o paine
   assert.match(obter('boot-hint').textContent, /verificações iniciais/);
 
   contexto.__pronto();
-  assert.equal(obter('boot-enter').disabled, false);
-  assert.equal(obter('boot-enter').textContent, 'Entrar no painel');
-
-  obter('boot-enter').dispatch('click');
   assert.equal(obter('boot-screen').hidden, true);
   assert.equal(armazenamento.valor, chaveHoje());
 });
@@ -205,24 +204,35 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
   const { contexto, obter } = carregarApp({
     fetch: async (url, options) => {
       chamadas.push({ url, options });
+      if (url.includes('/connection')) {
+        return { ok: true, status: 200, json: async () => ({ state: 'offline' }) };
+      }
       return { ok: true, status: 202, json: async () => ({}) };
     },
   });
   obter('shutdown-modal').hidden = true;
+  contexto.__maquina('Linha-01');
 
   assert.equal(obter('shutdown-modal').hidden, true);
   obter('shutdown-open').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(obter('shutdown-modal').hidden, false);
+  assert.equal(obter('shutdown-line-title').textContent, 'Linha desligada');
+  assert.equal(obter('shutdown-line-confirm').hidden, false);
+  assert.equal(obter('shutdown-confirm').disabled, true);
+
+  obter('shutdown-line-checkbox').checked = true;
+  obter('shutdown-line-checkbox').dispatch('change');
   assert.equal(obter('shutdown-confirm').disabled, false);
 
   obter('shutdown-confirm').dispatch('click');
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(obter('shutdown-confirm').disabled, true);
-  assert.equal(chamadas.length, 1);
-  assert.equal(chamadas[0].url, '/api/system/stop');
-  assert.equal(chamadas[0].options.method, 'POST');
-  assert.equal(chamadas[0].options.headers['x-pi40-control'], '1');
+  const stop = chamadas.find((chamada) => chamada.url === '/api/system/stop');
+  assert.ok(stop);
+  assert.equal(stop.options.method, 'POST');
+  assert.equal(stop.options.headers['x-pi40-control'], '1');
   assert.equal(obter('shutdown-instruction').hidden, true);
   assert.match(obter('shutdown-steps').innerHTML, /1\. Pausar dashboard e stream/);
   assert.match(obter('shutdown-steps').innerHTML, /stage done/);
@@ -248,19 +258,51 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
     steps: [],
   });
   assert.equal(obter('shutdown-final').hidden, false);
-  assert.match(fs.readFileSync(HTML_PATH, 'utf8'), /É seguro desligar o computador\./);
+  assert.match(obter('shutdown-final').textContent, /Fechando esta página/);
 
   obter('shutdown-dismiss').dispatch('click');
   assert.equal(obter('shutdown-modal').hidden, true);
 });
 
-test('Falha no acionamento automático oferece o atalho manual', async () => {
-  const { obter } = carregarApp({
-    fetch: async () => ({ ok: false, status: 502, json: async () => ({}) }),
+test('Linha apenas parada bloqueia o encerramento', async () => {
+  const chamadas = [];
+  const { contexto, obter } = carregarApp({
+    fetch: async (url) => {
+      chamadas.push(url);
+      return { ok: true, status: 200, json: async () => ({ state: 'online', running: false }) };
+    },
   });
   obter('shutdown-modal').hidden = true;
+  contexto.__maquina('Linha-01');
 
   obter('shutdown-open').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(obter('shutdown-line-title').textContent, 'Linha apenas parada');
+  assert.equal(obter('shutdown-line-confirm').hidden, true);
+  assert.equal(obter('shutdown-confirm').disabled, true);
+  assert.match(obter('shutdown-line-detail').textContent, /não é permitido/);
+
+  obter('shutdown-confirm').dispatch('click');
+  assert.equal(chamadas.includes('/api/system/stop'), false);
+});
+
+test('Falha no acionamento automático oferece o atalho manual', async () => {
+  const { contexto, obter } = carregarApp({
+    fetch: async (url) => {
+      if (url.includes('/connection')) {
+        return { ok: true, status: 200, json: async () => ({ state: 'offline' }) };
+      }
+      return { ok: false, status: 502, json: async () => ({}) };
+    },
+  });
+  obter('shutdown-modal').hidden = true;
+  contexto.__maquina('Linha-01');
+
+  obter('shutdown-open').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+  obter('shutdown-line-checkbox').checked = true;
+  obter('shutdown-line-checkbox').dispatch('change');
   obter('shutdown-confirm').dispatch('click');
   await new Promise((resolve) => setImmediate(resolve));
 
