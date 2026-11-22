@@ -38,6 +38,57 @@
 
     <main class="layout">
       <div class="stack">
+        <section class="panel control-panel" aria-labelledby="control-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="control-title">Central de monitoramento</h2>
+              <p id="monitoring-subtitle" class="muted">
+                Controle da sessão de monitoramento da PI40. O CLP não recebe comandos.
+              </p>
+            </div>
+            <span id="monitoring-status" class="status-pill off">Desligado</span>
+          </div>
+
+          <div class="control-grid">
+            <div class="control-main">
+              <button id="monitoring-toggle" class="power-btn off" type="button">
+                <span class="power-icon" aria-hidden="true">⏻</span>
+                <span id="monitoring-toggle-label">Ligar monitoramento</span>
+              </button>
+              <p id="monitoring-hint" class="control-hint">
+                Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.
+              </p>
+            </div>
+
+            <div class="control-progress">
+              <div class="progress-head">
+                <span>Prontidão da plataforma</span>
+                <strong id="monitoring-percent">0%</strong>
+              </div>
+              <div
+                id="monitoring-track"
+                class="progress-track"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                aria-label="Prontidão do monitoramento"
+              >
+                <div id="monitoring-bar" class="progress-bar"></div>
+              </div>
+              <ul id="monitoring-stages" class="stage-list" aria-live="polite"></ul>
+            </div>
+
+            <div class="control-events">
+              <div class="events-head">
+                <span>Eventos em tempo real</span>
+                <span id="monitoring-events-count" class="muted">0 eventos</span>
+              </div>
+              <ul id="monitoring-events" class="event-list" aria-live="polite"></ul>
+            </div>
+          </div>
+        </section>
+
         <section class="panel status-panel">
           <div class="panel-head">
             <h2>Operação e produção</h2>

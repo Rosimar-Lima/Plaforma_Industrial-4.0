@@ -7,6 +7,9 @@ const POLL_MAINTENANCE_MS = 15000;
 const POLL_PRODUCTION_MS = 15000;
 const TELEMETRY_LIMIT = 120;
 const BOTTLE_VOLUME_ML = 300;
+const MONITORING_EVENT_LIMIT = 10;
+const MONITORING_TRANSITION_MS = 1800;
+const MONITORING_STEP_MS = 70;
 
 const SEVERITY_LABELS = {
   critical: 'Crítico',
@@ -30,6 +33,23 @@ const PRIORITY_LABELS = {
   critical: 'Crítica',
 };
 
+const MONITORING_STAGES = [
+  { id: 'api', label: 'API de ingestão', detail: 'Saúde do backend verificada.' },
+  { id: 'stream', label: 'Stream de eventos', detail: 'Canal SSE pronto para receber eventos.' },
+  { id: 'gateway', label: 'Heartbeat do gateway', detail: 'Aguardando status do gateway.' },
+  { id: 'plc', label: 'Comunicação com o CLP', detail: 'Aguardando leitura ADS.' },
+  { id: 'telemetry', label: 'Telemetria chegando', detail: 'Aguardando primeira amostra.' },
+  { id: 'database', label: 'Persistência no banco', detail: 'Acumulado de produção carregado.' },
+];
+
+function createStageState() {
+  return MONITORING_STAGES.map((stage) => ({
+    ...stage,
+    status: 'pending',
+    detail: stage.detail,
+  }));
+}
+
 const state = {
   machines: [],
   machineId: null,
@@ -45,6 +65,14 @@ const state = {
   stream: null,
   streamOnline: false,
   lineConnection: null,
+  monitoring: {
+    enabled: false,
+    mode: 'off',
+    progress: 0,
+    targetProgress: 0,
+    stages: createStageState(),
+    events: [],
+  },
 };
 
 const el = {
@@ -52,6 +80,17 @@ const el = {
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
   lineConnection: document.getElementById('line-connection'),
+  monitoringPanel: document.querySelector('.control-panel'),
+  monitoringStatus: document.getElementById('monitoring-status'),
+  monitoringToggle: document.getElementById('monitoring-toggle'),
+  monitoringToggleLabel: document.getElementById('monitoring-toggle-label'),
+  monitoringHint: document.getElementById('monitoring-hint'),
+  monitoringPercent: document.getElementById('monitoring-percent'),
+  monitoringTrack: document.getElementById('monitoring-track'),
+  monitoringBar: document.getElementById('monitoring-bar'),
+  monitoringStages: document.getElementById('monitoring-stages'),
+  monitoringEvents: document.getElementById('monitoring-events'),
+  monitoringEventsCount: document.getElementById('monitoring-events-count'),
   lastUpdate: document.getElementById('last-update'),
   running: document.getElementById('stat-running'),
   filled: document.getElementById('prod-filled'),
@@ -103,9 +142,321 @@ async function getJson(url) {
   return response.json();
 }
 
+function stageById(id) {
+  return state.monitoring.stages.find((stage) => stage.id === id);
+}
+
+function monitoringDoneCount() {
+  return state.monitoring.stages.filter((stage) => stage.status === 'done').length;
+}
+
+function monitoringPercent() {
+  return Math.round((monitoringDoneCount() / state.monitoring.stages.length) * 100);
+}
+
+function setStage(id, status, detail) {
+  const stage = stageById(id);
+  if (!stage) return false;
+
+  const changed = stage.status !== status || (detail && stage.detail !== detail);
+  stage.status = status;
+  if (detail) stage.detail = detail;
+  return changed;
+}
+
+function addMonitoringEvent(title, detail = '', level = 'info') {
+  const event = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    at: new Date().toISOString(),
+    title,
+    detail,
+    level,
+  };
+  state.monitoring.events.unshift(event);
+  state.monitoring.events = state.monitoring.events.slice(0, MONITORING_EVENT_LIMIT);
+  renderMonitoringEvents();
+}
+
+function renderMonitoringEvents() {
+  el.monitoringEventsCount.textContent = `${state.monitoring.events.length} evento${
+    state.monitoring.events.length === 1 ? '' : 's'
+  }`;
+
+  if (state.monitoring.events.length === 0) {
+    el.monitoringEvents.innerHTML =
+      '<li class="event info"><span class="event-time">—</span><div class="event-body"><span class="event-title">Nenhum evento ainda</span><span class="event-detail">Ligue o monitoramento para ver a atividade da plataforma.</span></div></li>';
+    return;
+  }
+
+  el.monitoringEvents.innerHTML = state.monitoring.events
+    .map((event) => {
+      const time = new Date(event.at).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      return `
+        <li class="event ${event.level}">
+          <span class="event-time">${time}</span>
+          <div class="event-body">
+            <span class="event-title">${event.title}</span>
+            ${event.detail ? `<span class="event-detail">${event.detail}</span>` : ''}
+          </div>
+        </li>
+      `;
+    })
+    .join('');
+}
+
+function renderMonitoringStages() {
+  el.monitoringStages.innerHTML = state.monitoring.stages
+    .map((stage) => {
+      const stateLabel = {
+        done: 'ok',
+        active: 'em andamento',
+        pending: 'pendente',
+        error: 'falha',
+      }[stage.status] || 'pendente';
+      return `
+        <li class="stage ${stage.status}">
+          <span class="stage-dot" aria-hidden="true"></span>
+          <div>
+            <span class="stage-name">${stage.label}</span>
+            <span class="stage-detail">${stage.detail}</span>
+          </div>
+          <span class="stage-state">${stateLabel}</span>
+        </li>
+      `;
+    })
+    .join('');
+}
+
+function renderMonitoring() {
+  const percent = Math.round(state.monitoring.progress);
+  el.monitoringPercent.textContent = `${percent}%`;
+  el.monitoringBar.style.width = `${percent}%`;
+  el.monitoringTrack.setAttribute('aria-valuenow', String(percent));
+
+  const status = el.monitoringStatus;
+  status.classList.remove('off', 'starting', 'on', 'stopping');
+  el.monitoringPanel.classList.remove('off', 'starting', 'on', 'stopping');
+  el.monitoringToggle.classList.remove('off', 'starting', 'on', 'stopping');
+
+  const configs = {
+    off: {
+      pill: 'Desligado',
+      button: 'Ligar monitoramento',
+      hint: 'Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.',
+    },
+    starting: {
+      pill: 'Iniciando',
+      button: 'Desligar monitoramento',
+      hint: 'A barra avança conforme cada etapa de prontidão é confirmada.',
+    },
+    on: {
+      pill: 'Monitorando',
+      button: 'Desligar monitoramento',
+      hint: 'Plataforma pronta. Os eventos reais continuam sendo registrados abaixo.',
+    },
+    stopping: {
+      pill: 'Desligando',
+      button: 'Ligando...',
+      hint: 'Encerrando a sessão de monitoramento com segurança. O histórico permanece no banco.',
+    },
+  };
+
+  const current = configs[state.monitoring.mode] || configs.off;
+
+  status.textContent = current.pill;
+  status.classList.add(state.monitoring.mode);
+  el.monitoringPanel.classList.add(state.monitoring.mode);
+  el.monitoringToggle.classList.add(state.monitoring.mode);
+  el.monitoringToggleLabel.textContent = current.button;
+  el.monitoringHint.textContent = current.hint;
+  el.monitoringToggle.disabled = state.monitoring.mode === 'stopping';
+
+  renderMonitoringStages();
+}
+
+function animateMonitoringProgress(target, { duration = MONITORING_TRANSITION_MS, onDone } = {}) {
+  const from = state.monitoring.progress;
+  const to = Math.max(0, Math.min(100, target));
+  const startedAt = performance.now();
+
+  if (state.monitoring.animationFrame) {
+    cancelAnimationFrame(state.monitoring.animationFrame);
+    state.monitoring.animationFrame = null;
+  }
+
+  const step = (now) => {
+    const t = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    state.monitoring.progress = from + (to - from) * eased;
+    renderMonitoring();
+
+    if (t < 1) {
+      state.monitoring.animationFrame = requestAnimationFrame(step);
+    } else {
+      state.monitoring.progress = to;
+      state.monitoring.animationFrame = null;
+      renderMonitoring();
+      if (onDone) onDone();
+    }
+  };
+
+  state.monitoring.animationFrame = requestAnimationFrame(step);
+}
+
+function syncMonitoringProgress() {
+  if (!state.monitoring.enabled || state.monitoring.mode === 'stopping') return;
+  const target = monitoringPercent();
+  if (target !== state.monitoring.targetProgress) {
+    state.monitoring.targetProgress = target;
+    animateMonitoringProgress(target, { duration: 900 });
+  }
+  if (target === 100 && state.monitoring.mode === 'starting') {
+    state.monitoring.mode = 'on';
+    renderMonitoring();
+    addMonitoringEvent('Plataforma pronta', 'Todas as etapas de prontidão foram confirmadas.', 'ok');
+  }
+}
+
+function updateMonitoringStages() {
+  if (!state.monitoring.enabled) return;
+
+  const apiOk = state.monitoring.mode !== 'off';
+  if (setStage('api', apiOk ? 'done' : 'pending', apiOk ? 'Backend respondeu com sucesso.' : 'Aguardando inicialização.')) {
+    if (apiOk) addMonitoringEvent('API de ingestão verificada', 'O backend respondeu ao /health.', 'ok');
+  }
+
+  const streamStatus = state.streamOnline ? 'done' : 'active';
+  const streamDetail = state.streamOnline
+    ? 'Conectado ao SSE /api/stream.'
+    : 'SSE indisponível; usando polling automático.';
+  if (setStage('stream', streamStatus, streamDetail)) {
+    addMonitoringEvent(
+      state.streamOnline ? 'Stream de eventos conectado' : 'Stream em fallback',
+      streamDetail,
+      state.streamOnline ? 'ok' : 'warn'
+    );
+  }
+
+  const connection = state.lineConnection;
+  let gatewayStatus = 'active';
+  let gatewayDetail = 'Aguardando heartbeat do gateway.';
+  if (connection && connection.state !== 'unknown') {
+    gatewayStatus = connection.state === 'offline' ? 'error' : 'done';
+    gatewayDetail = connection.lastStatusAt
+      ? `Último heartbeat: ${new Date(connection.lastStatusAt).toLocaleTimeString('pt-BR')}.`
+      : 'Heartbeat recebido.';
+  }
+  if (setStage('gateway', gatewayStatus, gatewayDetail)) {
+    if (gatewayStatus === 'done') addMonitoringEvent('Gateway reportou heartbeat', gatewayDetail, 'ok');
+    if (gatewayStatus === 'error') addMonitoringEvent('Gateway sem comunicação', connection?.error || gatewayDetail, 'error');
+  }
+
+  let plcStatus = 'pending';
+  let plcDetail = 'Aguardando leitura ADS válida.';
+  if (connection?.state === 'offline') {
+    plcStatus = 'error';
+    plcDetail = 'Sem comunicação com o CLP.';
+  } else if (connection?.state === 'online') {
+    plcStatus = 'done';
+    plcDetail = connection.running ? 'CLP respondendo; linha em operação.' : 'CLP respondendo; linha parada.';
+  }
+  if (setStage('plc', plcStatus, plcDetail)) {
+    if (plcStatus === 'done') addMonitoringEvent('CLP acessível', plcDetail, 'ok');
+    if (plcStatus === 'error') addMonitoringEvent('CLP inacessível', plcDetail, 'error');
+  }
+
+  const hasTelemetry = state.samples.length > 0;
+  const telemetryDetail = hasTelemetry
+    ? `Última amostra: ${new Date(state.samples[0].recorded_at).toLocaleTimeString('pt-BR')}.`
+    : 'Aguardando primeira amostra de telemetria.';
+  if (setStage('telemetry', hasTelemetry ? 'done' : 'active', telemetryDetail)) {
+    if (hasTelemetry) addMonitoringEvent('Telemetria recebida', telemetryDetail, 'ok');
+  }
+
+  syncMonitoringProgress();
+  renderMonitoring();
+}
+
+function markDatabaseStage(ok, detail) {
+  if (!state.monitoring.enabled) return;
+  const changed = setStage('database', ok ? 'done' : 'error', detail);
+  if (changed) {
+    addMonitoringEvent(
+      ok ? 'Banco de dados sincronizado' : 'Falha ao consultar banco',
+      detail,
+      ok ? 'ok' : 'error'
+    );
+  }
+  syncMonitoringProgress();
+  renderMonitoring();
+}
+
+async function startMonitoring() {
+  if (state.monitoring.enabled) return;
+
+  state.monitoring.enabled = true;
+  state.monitoring.mode = 'starting';
+  state.monitoring.progress = 0;
+  state.monitoring.targetProgress = 0;
+  state.monitoring.stages = createStageState();
+  state.monitoring.events = [];
+  renderMonitoringEvents();
+  addMonitoringEvent('Monitoramento ligado', 'Iniciando verificação de prontidão da plataforma.', 'info');
+  renderMonitoring();
+  animateMonitoringProgress(8, { duration: 500 });
+
+  connectStream();
+
+  try {
+    await getJson('/health');
+    setStage('api', 'done', 'Backend respondeu com sucesso.');
+  } catch (error) {
+    setStage('api', 'error', 'Não foi possível consultar /health.');
+    addMonitoringEvent('Falha ao consultar API', error.message, 'error');
+  }
+
+  await loadMachines();
+  refreshAll();
+  updateMonitoringStages();
+}
+
+function stopMonitoring() {
+  if (!state.monitoring.enabled || state.monitoring.mode === 'stopping') return;
+
+  state.monitoring.mode = 'stopping';
+  addMonitoringEvent('Desligando monitoramento', 'A sessão será encerrada; o histórico permanece no banco.', 'warn');
+  renderMonitoring();
+
+  animateMonitoringProgress(0, {
+    duration: MONITORING_TRANSITION_MS,
+    onDone: () => {
+      state.monitoring.enabled = false;
+      state.monitoring.mode = 'off';
+      state.monitoring.targetProgress = 0;
+      state.monitoring.stages = createStageState();
+      state.monitoring.stages.forEach((stage) => {
+        stage.status = 'pending';
+        stage.detail = 'Monitoramento desligado.';
+      });
+      if (state.stream) {
+        state.stream.close();
+        state.stream = null;
+      }
+      state.streamOnline = false;
+      addMonitoringEvent('Monitoramento desligado', 'Nenhum dado histórico foi apagado.', 'info');
+      renderMonitoring();
+    },
+  });
+}
+
 function renderLineConnection(connection) {
   state.lineConnection = connection ?? null;
   renderOperation();
+  updateMonitoringStages();
 
   const badge = el.lineConnection;
   badge.classList.remove('line-online', 'line-stopped', 'line-offline', 'line-unknown');
@@ -156,6 +507,12 @@ async function refreshLineConnection() {
     renderLineConnection(connection);
   } catch (error) {
     console.error(error);
+    if (state.monitoring.enabled) {
+      setStage('gateway', 'error', 'Falha ao consultar /connection.');
+      setStage('plc', 'error', 'Estado da linha indisponível.');
+      syncMonitoringProgress();
+      renderMonitoring();
+    }
   }
 }
 
@@ -269,14 +626,21 @@ function renderProductionTotal(data) {
 async function refreshProductionTotal() {
   if (!state.machineId) {
     renderProductionTotal(null);
+    markDatabaseStage(false, 'Nenhuma máquina selecionada.');
     return;
   }
 
   try {
     const data = await getJson(`/api/machines/${state.machineId}/production/total`);
     renderProductionTotal(data);
+    markDatabaseStage(
+      true,
+      `Acumulado sincronizado: ${formatNumber(data.accumulatedProduced)} produzidas.`
+    );
   } catch (error) {
     console.error(error);
+    renderProductionTotal(null);
+    markDatabaseStage(false, 'Não foi possível consultar o acumulado de produção.');
   }
 }
 
@@ -825,6 +1189,7 @@ async function refreshTelemetry() {
     );
     state.samples = data.samples || [];
     renderTelemetry(state.samples);
+    if (state.monitoring.enabled) updateMonitoringStages();
   } catch (error) {
     console.error(error);
   }
@@ -894,33 +1259,7 @@ async function loadMachines() {
   }
 }
 
-el.machineSelect.addEventListener('change', () => {
-  const selected = state.machines.find(
-    (machine) => String(machine.id) === el.machineSelect.value
-  );
-  state.machineId = selected ? selected.id : null;
-  state.machineCode = selected ? selected.code : null;
-  state.samples = [];
-  state.lastSamples = [];
-  refreshAll();
-});
 
-el.periodSelect.addEventListener('change', () => {
-  state.periodMinutes = Number(el.periodSelect.value) || 60;
-  void refreshOee();
-  void refreshProduction();
-});
-
-el.productionBucket.addEventListener('change', () => {
-  state.productionBucket = el.productionBucket.value === 'shift' ? 'shift' : 'hour';
-  void refreshProduction();
-});
-
-el.refresh.addEventListener('click', () => {
-  void loadMachines().then((hasMachines) => {
-    if (hasMachines) refreshAll();
-  });
-});
 
 el.alertsList.addEventListener('click', (event) => {
   const button = event.target.closest('.alert-resolve');
@@ -957,13 +1296,17 @@ window.addEventListener('resize', () => {
 });
 
 function connectStream() {
-  if (typeof EventSource === 'undefined') return;
+  if (typeof EventSource === 'undefined' || state.stream) return;
 
   const source = new EventSource('/api/stream');
   state.stream = source;
 
   source.addEventListener('open', () => {
     state.streamOnline = true;
+    if (state.monitoring.enabled) {
+      addMonitoringEvent('SSE conectado', 'Eventos em tempo real ativos.', 'ok');
+      updateMonitoringStages();
+    }
   });
 
   source.addEventListener('telemetry', (event) => {
@@ -982,6 +1325,15 @@ function connectStream() {
     ].slice(0, TELEMETRY_LIMIT);
     renderTelemetry(state.samples);
     state.streamOnline = true;
+    if (state.monitoring.enabled) {
+      const produced = payload.production?.total ?? 0;
+      addMonitoringEvent(
+        payload.line?.running ? 'Linha em operação' : 'Telemetria recebida',
+        `Total ${formatNumber(produced)} unidades; etapa ${payload.line?.step ?? '—'}.`,
+        'info'
+      );
+      updateMonitoringStages();
+    }
   });
 
   source.addEventListener('production', (event) => {
@@ -994,6 +1346,12 @@ function connectStream() {
 
     if (!payload || payload.machineId !== state.machineCode) return;
     renderProductionTotal(payload.totals);
+    if (state.monitoring.enabled) {
+      markDatabaseStage(true, `Acumulado sincronizado: ${formatNumber(payload.totals?.accumulatedProduced)} produzidas.`);
+      if (payload.action === 'reset') {
+        addMonitoringEvent('Reset de produção detectado', 'Contador atual zerado; acumulado preservado no banco.', 'warn');
+      }
+    }
   });
 
   source.addEventListener('connection', (event) => {
@@ -1006,29 +1364,99 @@ function connectStream() {
 
     if (!payload || payload.machineId !== state.machineCode) return;
     renderLineConnection(payload.connection ?? null);
+    if (state.monitoring.enabled) {
+      if (payload.action === 'lost' || payload.action === 'connection.lost') {
+        addMonitoringEvent('Comunicação perdida', payload.connection?.error || 'Gateway sem heartbeat.', 'error');
+      }
+      if (payload.action === 'restored' || payload.action === 'connection.restored') {
+        addMonitoringEvent('Comunicação restabelecida', 'O gateway voltou a responder.', 'ok');
+      }
+    }
   });
 
-  source.addEventListener('alert', () => {
+  source.addEventListener('alert', (event) => {
+    if (state.monitoring.enabled) {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.machineId === state.machineCode) {
+          addMonitoringEvent(
+            payload.action === 'resolved' ? 'Alerta resolvido' : 'Novo alerta',
+            payload.alert?.message || 'Evento de alerta recebido.',
+            payload.action === 'resolved' ? 'ok' : 'warn'
+          );
+        }
+      } catch {}
+    }
     void refreshAlerts();
   });
 
-  source.addEventListener('maintenance', () => {
+  source.addEventListener('maintenance', (event) => {
+    if (state.monitoring.enabled) {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.machineId === state.machineCode) {
+          addMonitoringEvent(
+            'Manutenção atualizada',
+            `OS ${payload.order?.id ?? '—'}: ${payload.action || 'atualizada'}.`,
+            'info'
+          );
+        }
+      } catch {}
+    }
     void refreshMaintenance();
     void refreshAlerts();
   });
 
   source.addEventListener('error', () => {
     state.streamOnline = false;
+    if (state.monitoring.enabled) updateMonitoringStages();
   });
 }
 
-async function start() {
-  const hasMachines = await loadMachines();
-  if (hasMachines) refreshAll();
+el.machineSelect.addEventListener('change', () => {
+  const selected = state.machines.find(
+    (machine) => String(machine.id) === el.machineSelect.value
+  );
+  state.machineId = selected ? selected.id : null;
+  state.machineCode = selected ? selected.code : null;
+  state.samples = [];
+  state.lastSamples = [];
+  if (state.monitoring.enabled) refreshAll();
+});
 
-  connectStream();
+el.periodSelect.addEventListener('change', () => {
+  state.periodMinutes = Number(el.periodSelect.value) || 60;
+  if (state.monitoring.enabled) {
+    void refreshOee();
+    void refreshProduction();
+  }
+});
+
+el.productionBucket.addEventListener('change', () => {
+  state.productionBucket = el.productionBucket.value === 'shift' ? 'shift' : 'hour';
+  if (state.monitoring.enabled) void refreshProduction();
+});
+
+el.refresh.addEventListener('click', () => {
+  if (!state.monitoring.enabled) {
+    addMonitoringEvent('Monitoramento desligado', 'Ligue o monitoramento para atualizar os dados.', 'warn');
+    return;
+  }
+  void loadMachines().then((hasMachines) => {
+    if (hasMachines) refreshAll();
+  });
+});
+
+async function start() {
+  renderMonitoringEvents();
+  renderMonitoring();
+  el.monitoringToggle.addEventListener('click', () => {
+    if (state.monitoring.enabled) stopMonitoring();
+    else void startMonitoring();
+  });
 
   setInterval(async () => {
+    if (!state.monitoring.enabled) return;
     if (!state.machineId) {
       const found = await loadMachines();
       if (found) refreshAll();
@@ -1038,23 +1466,25 @@ async function start() {
   }, POLL_TELEMETRY_MS);
 
   setInterval(() => {
-    if (state.machineId) void refreshOee();
+    if (state.monitoring.enabled && state.machineId) void refreshOee();
   }, POLL_OEE_MS);
 
   setInterval(() => {
-    if (state.machineId && !state.streamOnline) void refreshLineConnection();
+    if (state.monitoring.enabled && state.machineId && !state.streamOnline) {
+      void refreshLineConnection();
+    }
   }, POLL_TELEMETRY_MS);
 
   setInterval(() => {
-    if (state.machineId) void refreshAlerts();
+    if (state.monitoring.enabled && state.machineId) void refreshAlerts();
   }, POLL_ALERTS_MS);
 
   setInterval(() => {
-    if (state.machineId) void refreshMaintenance();
+    if (state.monitoring.enabled && state.machineId) void refreshMaintenance();
   }, POLL_MAINTENANCE_MS);
 
   setInterval(() => {
-    if (state.machineId) void refreshProduction();
+    if (state.monitoring.enabled && state.machineId) void refreshProduction();
   }, POLL_PRODUCTION_MS);
 }
 
