@@ -18,7 +18,7 @@ function criarAgente(launcher, agora = () => Date.parse('2026-11-22T12:00:00.000
   const agent = createControlAgent({
     token: 'token-de-teste',
     commandPath,
-    repoDir: path.resolve(__dirname, '..'),
+    repoDir: path.resolve(__dirname, '../..'),
     launcher,
     logger: {},
     now: agora,
@@ -39,6 +39,19 @@ function escrever(commandPath, overrides = {}) {
     'utf8'
   );
 }
+
+test('launcher padrão passa o caminho do script sem aspas literais', () => {
+  const { agent, dir } = criarAgente(() => {});
+  try {
+    assert.equal(agent.scriptArgs[4], agent.scriptPath);
+    assert.equal(agent.scriptArgs.includes(`"${agent.scriptPath}"`), false);
+    assert.equal(agent.scriptArgs[5], '-Action');
+    assert.equal(fs.existsSync(agent.scriptPath), true);
+  } finally {
+    agent.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('agente não aciona nada quando não há pedido', async () => {
   const chamadas = [];

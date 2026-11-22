@@ -25,6 +25,16 @@ function createControlAgent({
   if (!commandPath) throw new Error('PI40_CONTROL_COMMAND_PATH é obrigatório');
 
   const scriptPath = path.join(repoDir, 'scripts', 'pi40-dia.ps1');
+  // O Node já escapa os argumentos ao chamar spawn(). Colocar o caminho entre
+  // aspas aqui faz o PowerShell 5.1 receber aspas literais e rejeitar -File.
+  const scriptArgs = [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    scriptPath,
+    '-Action',
+  ];
   let activeChild = null;
   let timer = null;
   let lastNonce = null;
@@ -32,21 +42,22 @@ function createControlAgent({
   const launch =
     launcher ||
     ((action) => {
-      const child = spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          `"${scriptPath}"`,
-          '-Action',
-          action,
-        ],
-        { detached: true, stdio: 'ignore', windowsHide: true }
-      );
+      const powershellExe = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+      const child = spawn(powershellExe, [...scriptArgs, action], {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      let output = '';
+      child.stdout?.on('data', (chunk) => { output += chunk.toString(); });
+      child.stderr?.on('data', (chunk) => { output += chunk.toString(); });
       child.on('error', (error) => {
         logger.error?.(`[control] falha ao iniciar pi40-dia.ps1: ${error.message}`);
+      });
+      child.on('exit', (code, signal) => {
+        logger.log?.(
+          `[control] pi40-dia.ps1 saiu com código ${code} (${signal}): ${output.slice(-2000)}`
+        );
       });
       child.unref();
       return child;
@@ -127,7 +138,7 @@ function createControlAgent({
     }
   }
 
-  return { start, stop, checkCommand, isBusy, commandPath };
+  return { start, stop, checkCommand, isBusy, commandPath, scriptPath, scriptArgs };
 }
 
 module.exports = { createControlAgent };

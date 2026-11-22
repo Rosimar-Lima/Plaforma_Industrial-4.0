@@ -28,17 +28,19 @@ async function main() {
   const control = createControlAgent({
     token: config.control.token,
     commandPath: config.control.commandPath,
-    repoDir: path.resolve(__dirname, '..'),
+    // __dirname é gateway/src; o script pi40-dia.ps1 fica na raiz do repositório.
+    repoDir: path.resolve(__dirname, '../..'),
   });
   control.start();
   console.log(`Controle local ativo em ${control.commandPath}.`);
+  console.log(`Script de controle: ${control.scriptPath} (existe: ${require('node:fs').existsSync(control.scriptPath)}).`);
 
   let stopping = false;
   async function shutdown(signal) {
     if (stopping) return;
     stopping = true;
     console.log(`${signal} recebido; encerrando gateway.`);
-    await control.close();
+    await control.stop();
     await gateway.stop();
     process.exit(0);
   }

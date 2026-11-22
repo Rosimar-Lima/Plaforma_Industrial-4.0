@@ -22,6 +22,12 @@ $script:status = [ordered]@{
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+
+    # O gateway roda como LocalSystem (S-1-5-18). Ele já tem privilégio para
+    # gerenciar o serviço, mas não pode mostrar o prompt de UAC; sem esta
+    # exceção o script tentaria elevar a partir da sessão 0 e sairia sem agir.
+    if ($identity.User -and $identity.User.Value -eq 'S-1-5-18') { return $true }
+
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
@@ -167,7 +173,7 @@ switch ($Action) {
 
         $current = 'dashboard'
         try {
-            Set-Step $current 'done' 'Dashboard pausado; a linha física continua em operação, se estiver ligada.'
+            Set-Step $current 'done' 'Dashboard pausado e stream fechado.'
 
             $current = 'gateway'
             Set-Step $current 'active' 'Parando o serviço PI40Gateway...'
@@ -180,17 +186,24 @@ switch ($Action) {
             $current = 'persistence'
             Set-Step $current 'active' 'Consultando o banco...'
             Start-Sleep -Seconds 2
-            $samples = ((Invoke-Docker -DockerArguments @(
-                'compose', 'exec', '-T', 'postgres', 'psql',
-                '-U', 'industrial', '-d', 'industrial', '-tAc',
-                'SELECT count(*) FROM telemetry;'
-            )) | Out-String).Trim()
-            Set-Step $current 'done' "$samples amostras persistidas no PostgreSQL."
+            $servicosAtivos = ((& (Get-DockerCommand) compose ps --status running --services) | Out-String)
+            if ($servicosAtivos -match 'postgres') {
+                $samples = ((Invoke-Docker -DockerArguments @(
+                    'compose', 'exec', '-T', 'postgres', 'psql',
+                    '-U', 'industrial', '-d', 'industrial', '-tAc',
+                    'SELECT count(*) FROM telemetry;'
+                )) | Out-String).Trim()
+                Set-Step $current 'done' "$samples amostras persistidas no PostgreSQL."
+            }
+            else {
+                # Reexecução do Stop: a contagem já foi feita na primeira passada.
+                Set-Step $current 'done' 'PostgreSQL já estava parado; contagem registrada na execução anterior.'
+            }
 
             $current = 'containers'
             Set-Step $current 'active' 'Parando backend, PostgreSQL e simulador...'
             Invoke-Docker -DockerArguments @('compose', 'stop')
-            $running = (& (Get-DockerCommand) compose ps --status running --services).Trim()
+            $running = ((& (Get-DockerCommand) compose ps --status running --services) | Out-String).Trim()
             if ($running) {
                 throw "Containers ainda ativos: $running"
             }
