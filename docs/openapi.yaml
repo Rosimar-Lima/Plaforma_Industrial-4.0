@@ -34,6 +34,63 @@ paths:
                     type: string
                     example: ok
 
+  /api/system/stop:
+    post:
+      tags: [Saúde]
+      summary: Aciona o encerramento seguro da PI40 no host
+      description: |
+        O backend escreve o pedido em `runtime/system-command.json`; o gateway,
+        elevado no host Windows, lê o arquivo e dispara
+        `scripts/pi40-dia.ps1 -Action Stop`. Nenhuma porta é aberta. Exige o
+        cabeçalho `x-pi40-control: 1` e um `Origin` local; um site externo não
+        consegue disparar a ação. A resposta é imediata (202); acompanhe o
+        progresso em `/api/system/status`.
+      parameters:
+        - in: header
+          name: x-pi40-control
+          required: true
+          schema:
+            type: string
+            example: '1'
+      responses:
+        '202':
+          description: Pedido aceito pelo agente local
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                    example: true
+                  action:
+                    type: string
+                    example: stop
+        '403':
+          description: Cabeçalho de controle ausente ou origem não permitida
+        '502':
+          description: Agente local indisponível ou não autorizado
+
+  /api/system/start:
+    post:
+      tags: [Saúde]
+      summary: Aciona a inicialização da PI40 no host
+      description: Mesmo contrato e mecanismo de `/api/system/stop`, com `-Action Start`.
+      parameters:
+        - in: header
+          name: x-pi40-control
+          required: true
+          schema:
+            type: string
+            example: '1'
+      responses:
+        '202':
+          description: Pedido aceito pelo agente local
+        '403':
+          description: Cabeçalho de controle ausente ou origem não permitida
+        '502':
+          description: Agente local indisponível ou não autorizado
+
   /api/system/status:
     get:
       tags: [Saúde]

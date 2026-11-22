@@ -95,6 +95,7 @@ const state = {
     timer: null,
     startedAt: 0,
     apiLost: false,
+    triggered: false,
   },
 };
 
@@ -687,8 +688,9 @@ function renderShutdown(status) {
 
   const finished = stateName === 'done' || stateName === 'error';
   el.shutdownFinal.hidden = stateName !== 'done';
-  el.shutdownInstruction.hidden = state.shutdown.phase !== 'progress' || finished;
-  el.shutdownCopy.hidden = state.shutdown.phase !== 'progress';
+  const manualFallback = state.shutdown.phase === 'progress' && !state.shutdown.triggered;
+  el.shutdownInstruction.hidden = !manualFallback || finished;
+  el.shutdownCopy.hidden = !manualFallback;
   el.shutdownConfirm.disabled = state.shutdown.phase !== 'confirm';
   el.shutdownConfirm.textContent =
     state.shutdown.phase === 'confirm' ? 'Confirmar encerramento' : 'Encerramento iniciado';
@@ -775,6 +777,7 @@ async function pollSystemStatus() {
 function openShutdownModal() {
   state.shutdown.phase = 'confirm';
   state.shutdown.apiLost = false;
+  state.shutdown.triggered = false;
   state.shutdown.status = null;
   el.shutdownModal.hidden = false;
   renderShutdown(null);
@@ -784,6 +787,27 @@ function openShutdownModal() {
 function closeShutdownModal() {
   el.shutdownModal.hidden = true;
   stopSystemStatusPolling();
+}
+
+async function triggerSystemAction() {
+  el.shutdownMessage.textContent = 'Acionando o encerramento no host...';
+  try {
+    const response = await fetch('/api/system/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pi40-control': '1' },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    state.shutdown.triggered = true;
+    el.shutdownInstruction.hidden = true;
+    el.shutdownMessage.textContent = 'Encerramento iniciado. Acompanhando o progresso...';
+  } catch (error) {
+    state.shutdown.triggered = false;
+    el.shutdownInstruction.hidden = false;
+    el.shutdownMessage.textContent =
+      'Não foi possível acionar o serviço local. Execute o atalho ENCERRAR-PI40.cmd.';
+  }
 }
 
 function confirmShutdown() {
@@ -808,8 +832,8 @@ function confirmShutdown() {
 
   stopMonitoring();
   renderShutdown(state.shutdown.status);
-  copyShutdownCommand();
   startSystemStatusPolling();
+  void triggerSystemAction();
 }
 
 function renderLineConnection(connection) {

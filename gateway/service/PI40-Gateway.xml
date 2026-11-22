@@ -30,4 +30,8 @@
   <env name="ADS_TARGET_PORT" value="851"/>
   <env name="ADS_TIMEOUT_MS" value="5000"/>
   <env name="ADS_AUTO_RECONNECT" value="false"/>
+
+  <!-- Agente que lê runtime/system-command.json e aciona pi40-dia.ps1. -->
+  <env name="PI40_CONTROL_TOKEN" value="pi40-local-control"/>
+  <env name="PI40_CONTROL_COMMAND_PATH" value="%BASE%\..\..\runtime\system-command.json"/>
 </service>

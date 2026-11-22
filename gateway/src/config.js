@@ -77,6 +77,13 @@ function loadConfig(env = process.env) {
     simulator: {
       autoStart: toBoolean(env.SIMULATOR_AUTO_START, true),
     },
+    control: {
+      // Mesmo token definido no backend (SYSTEM_CONTROL_TOKEN).
+      token: env.PI40_CONTROL_TOKEN || 'pi40-local-control',
+      commandPath:
+        env.PI40_CONTROL_COMMAND_PATH ||
+        path.resolve(__dirname, '../../runtime/system-command.json'),
+    },
   };
 }
 

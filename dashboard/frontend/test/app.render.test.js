@@ -200,8 +200,14 @@ test('Tela de inicialização aparece no primeiro acesso do dia e libera o paine
   assert.equal(armazenamento.valor, chaveHoje());
 });
 
-test('Encerramento seguro confirma o painel pausado e mostra o progresso do script', () => {
-  const { contexto, obter } = carregarApp();
+test('Encerramento seguro confirma o painel pausado e mostra o progresso do script', async () => {
+  const chamadas = [];
+  const { contexto, obter } = carregarApp({
+    fetch: async (url, options) => {
+      chamadas.push({ url, options });
+      return { ok: true, status: 202, json: async () => ({}) };
+    },
+  });
   obter('shutdown-modal').hidden = true;
 
   assert.equal(obter('shutdown-modal').hidden, true);
@@ -210,8 +216,14 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
   assert.equal(obter('shutdown-confirm').disabled, false);
 
   obter('shutdown-confirm').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+
   assert.equal(obter('shutdown-confirm').disabled, true);
-  assert.equal(obter('shutdown-instruction').hidden, false);
+  assert.equal(chamadas.length, 1);
+  assert.equal(chamadas[0].url, '/api/system/stop');
+  assert.equal(chamadas[0].options.method, 'POST');
+  assert.equal(chamadas[0].options.headers['x-pi40-control'], '1');
+  assert.equal(obter('shutdown-instruction').hidden, true);
   assert.match(obter('shutdown-steps').innerHTML, /1\. Pausar dashboard e stream/);
   assert.match(obter('shutdown-steps').innerHTML, /stage done/);
 
@@ -226,6 +238,8 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
   });
   assert.match(obter('shutdown-steps').innerHTML, /stage active/);
   assert.equal(obter('shutdown-status').textContent, 'Encerrando');
+  assert.equal(obter('shutdown-instruction').hidden, true);
+  assert.equal(obter('shutdown-copy').hidden, true);
 
   contexto.__statusSistema({
     state: 'done',
@@ -238,4 +252,19 @@ test('Encerramento seguro confirma o painel pausado e mostra o progresso do scri
 
   obter('shutdown-dismiss').dispatch('click');
   assert.equal(obter('shutdown-modal').hidden, true);
+});
+
+test('Falha no acionamento automático oferece o atalho manual', async () => {
+  const { obter } = carregarApp({
+    fetch: async () => ({ ok: false, status: 502, json: async () => ({}) }),
+  });
+  obter('shutdown-modal').hidden = true;
+
+  obter('shutdown-open').dispatch('click');
+  obter('shutdown-confirm').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(obter('shutdown-instruction').hidden, false);
+  assert.equal(obter('shutdown-copy').hidden, false);
+  assert.match(obter('shutdown-message').textContent, /ENCERRAR-PI40\.cmd/);
 });

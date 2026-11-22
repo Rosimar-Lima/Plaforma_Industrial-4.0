@@ -34,10 +34,14 @@ services:
       SHIFT_START_HOUR: ${SHIFT_START_HOUR:-6}
       SHIFT_HOURS: ${SHIFT_HOURS:-8}
       DASHBOARD_DIR: /app/dashboard/frontend
+      SYSTEM_CONTROL_TOKEN: ${SYSTEM_CONTROL_TOKEN:-pi40-local-control}
+      SYSTEM_CONTROL_COMMAND_PATH: ${SYSTEM_CONTROL_COMMAND_PATH:-/app/runtime/system-command.json}
+      SYSTEM_CONTROL_ORIGIN: ${SYSTEM_CONTROL_ORIGIN:-http://localhost:3000}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
       - ./dashboard/frontend:/app/dashboard/frontend:ro
+      - ./runtime:/app/runtime
     healthcheck:
       test:
         - CMD

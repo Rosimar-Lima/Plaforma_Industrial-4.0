@@ -3,6 +3,7 @@
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { validateTelemetry, validateGatewayStatus } = require('./validation');
 const { createStreamHub } = require('./stream');
 const { createConnectionTracker } = require('./connection');
@@ -33,6 +34,11 @@ function createApp({
   nominalCapacityPerHour = 400,
   dashboardDir = null,
   systemStatusPath = null,
+  systemControl = {
+    token: 'pi40-local-control',
+    commandPath: path.resolve(__dirname, '../../../runtime/system-command.json'),
+    allowedOrigin: 'http://localhost:3000',
+  },
   productionSettings = {
     timeZone: DEFAULT_TIME_ZONE,
     shiftStartHour: DEFAULT_SHIFT_START_HOUR,
@@ -479,6 +485,44 @@ function createApp({
       res.status(500).json({ error: 'system_status_unavailable' });
     }
   });
+
+  // O navegador não pode acionar um serviço Windows e, neste Docker/WSL, o
+  // container não alcança portas do host. O pedido é entregue por um arquivo no
+  // diretório `runtime/`, compartilhado com o gateway por um bind mount.
+  // Cabeçalho customizado + Origin impedem que um site externo dispare a ação.
+  async function requestSystemAction(action, req, res) {
+    const origin = req.get('origin');
+    const allowed = new Set([
+      systemControl.allowedOrigin,
+      systemControl.allowedOrigin.replace('localhost', '127.0.0.1'),
+    ]);
+    if (req.get('x-pi40-control') !== '1' || (origin && !allowed.has(origin))) {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+
+    const commandPath = systemControl.commandPath;
+    const tempPath = `${commandPath}.${process.pid}.${randomUUID()}.tmp`;
+    const command = {
+      action,
+      token: systemControl.token,
+      requestedAt: new Date().toISOString(),
+      nonce: randomUUID(),
+    };
+
+    try {
+      await fs.promises.mkdir(path.dirname(commandPath), { recursive: true });
+      await fs.promises.writeFile(tempPath, JSON.stringify(command), 'utf8');
+      await fs.promises.rename(tempPath, commandPath);
+      res.status(202).json({ accepted: true, action });
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+      res.status(502).json({ error: 'system_command_unavailable', detail: error.message });
+    }
+  }
+
+  app.post('/api/system/stop', (req, res) => void requestSystemAction('stop', req, res));
+  app.post('/api/system/start', (req, res) => void requestSystemAction('start', req, res));
 
   if (dashboardDir) {
     app.use(express.static(dashboardDir, { extensions: ['html'] }));

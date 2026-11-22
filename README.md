@@ -53,12 +53,21 @@ TwinCAT XAE e runtime em `Run`) e oferece entrar em modo limitado. A data fica e
 `localStorage`, então um `F5` no mesmo dia volta direto ao painel.
 
 Para encerrar, use o botão **Encerrar dia** no topo do painel e confirme. A tela
-pausa o dashboard e fecha o SSE, e pede para executar o atalho
-`ENCERRAR-PI40.cmd` na raiz do projeto (o Windows solicita confirmação de
-administrador). O script `scripts/pi40-dia.ps1 -Action Stop` para o gateway,
-confere as amostras persistidas e roda `docker compose stop` — nunca `down -v`,
-para preservar o volume do banco. Nenhum comando é escrito no CLP. O progresso
-pode ser acompanhado em `GET /api/system/status`.
+pausa o dashboard e fecha o SSE, e aciona o encerramento diretamente: o backend
+escreve o pedido em `runtime/system-command.json` (bind mount compartilhado com
+o host) e o gateway, rodando como serviço Windows elevado, dispara
+`scripts/pi40-dia.ps1 -Action Stop`. O script para o gateway, confere as amostras
+persistidas e roda `docker compose stop` — nunca `down -v`, para preservar o
+volume do banco. Nenhum comando é escrito no CLP. O progresso pode ser
+acompanhado em `GET /api/system/status`.
+
+Nenhuma porta é aberta para essa ponte: o container e o host trocam apenas o
+arquivo em `runtime/`. O pedido carrega o token `SYSTEM_CONTROL_TOKEN`, o mesmo
+definido como `PI40_CONTROL_TOKEN` no XML do serviço, e expira em 60 s. O
+endpoint do backend exige ainda o cabeçalho `x-pi40-control: 1` e um `Origin`
+local, para impedir que um site externo dispare a ação. Se o acionamento
+automático falhar, o modal oferece o atalho `ENCERRAR-PI40.cmd` como alternativa
+manual.
 
 Para começar o dia, execute `INICIAR-PI40.cmd` (ou
 `powershell -File scripts\pi40-dia.ps1 -Action Start`): ele sobe backend e

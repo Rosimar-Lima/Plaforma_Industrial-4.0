@@ -1171,3 +1171,49 @@ test('GET /api/system/status devolve o progresso escrito pelo script local', asy
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('POST /api/system/stop exige o cabeçalho de controle', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/stop`, { method: 'POST' });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: 'forbidden' });
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/system/stop escreve o pedido para o gateway elevado', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi40-comando-'));
+  const commandPath = path.join(dir, 'runtime', 'system-command.json');
+  const app = await startApp(createFakeRepository(), {
+    systemControl: {
+      token: 'token-do-teste',
+      commandPath,
+      allowedOrigin: 'http://localhost:3000',
+    },
+  });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/stop`, {
+      method: 'POST',
+      headers: {
+        'x-pi40-control': '1',
+        Origin: 'http://localhost:3000',
+      },
+    });
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).accepted, true);
+
+    const comando = JSON.parse(fs.readFileSync(commandPath, 'utf8'));
+    assert.equal(comando.action, 'stop');
+    assert.equal(comando.token, 'token-do-teste');
+    assert.ok(comando.nonce);
+    assert.ok(Number.isFinite(Date.parse(comando.requestedAt)));
+    assert.equal(fs.readdirSync(path.dirname(commandPath)).filter((f) => f.endsWith('.tmp')).length, 0);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
