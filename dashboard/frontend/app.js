@@ -84,6 +84,10 @@ const el = {
   diagnosticModal: document.getElementById('diagnostic-modal'),
   diagnosticClose: document.getElementById('diagnostic-close'),
   diagnosticDismiss: document.getElementById('diagnostic-dismiss'),
+  warningModal: document.getElementById('warning-modal'),
+  warningClose: document.getElementById('warning-close'),
+  warningDismiss: document.getElementById('warning-dismiss'),
+  warningMessage: document.getElementById('warning-message'),
   monitoringStatus: document.getElementById('monitoring-status'),
   monitoringToggle: document.getElementById('monitoring-toggle'),
   monitoringHint: document.getElementById('monitoring-hint'),
@@ -462,6 +466,16 @@ function openDiagnosticModal() {
 
 function closeDiagnosticModal() {
   el.diagnosticModal.hidden = true;
+}
+
+function openWarningModal(message) {
+  el.warningMessage.textContent = message;
+  el.warningModal.hidden = false;
+  el.warningDismiss.focus();
+}
+
+function closeWarningModal() {
+  el.warningModal.hidden = true;
 }
 
 function renderLineConnection(connection) {
@@ -1293,11 +1307,18 @@ el.maintenanceOrdersBody.addEventListener('click', (event) => {
 el.orderModalClose.addEventListener('click', closeOrderModal);
 el.orderModalDismiss.addEventListener('click', closeOrderModal);
 el.orderModal.querySelector('[data-close-modal]').addEventListener('click', closeOrderModal);
+el.warningClose.addEventListener('click', closeWarningModal);
+el.warningDismiss.addEventListener('click', closeWarningModal);
+el.warningModal.querySelector('[data-close-warning]').addEventListener('click', closeWarningModal);
 el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
 el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (!el.warningModal.hidden) {
+    closeWarningModal();
+    return;
+  }
   if (!el.diagnosticModal.hidden) {
     closeDiagnosticModal();
     return;
@@ -1456,6 +1477,7 @@ el.productionBucket.addEventListener('change', () => {
 el.refresh.addEventListener('click', () => {
   if (!state.monitoring.enabled) {
     addMonitoringEvent('Monitoramento desligado', 'Ligue o monitoramento para atualizar os dados.', 'warn');
+    openWarningModal('Ligue o monitoramento para atualizar os dados.');
     return;
   }
   void loadMachines().then((hasMachines) => {

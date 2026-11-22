@@ -962,6 +962,21 @@ button:hover {
   overflow: hidden;
 }
 
+.modal-card.alert-card {
+  width: min(420px, 100%);
+}
+
+.warning-message {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.warning-message::before {
+  content: "⚠";
+  margin-right: 8px;
+  color: var(--warn);
+}
+
 .modal-head {
   display: flex;
   align-items: center;

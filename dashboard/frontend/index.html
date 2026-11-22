@@ -263,6 +263,35 @@
       </section>
     </div>
 
+    <div id="warning-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-warning></div>
+      <section
+        class="modal-card alert-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="warning-title"
+        aria-describedby="warning-message"
+      >
+        <header class="modal-head">
+          <h3 id="warning-title">Monitoramento desligado</h3>
+          <button
+            id="warning-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body">
+          <p id="warning-message" class="warning-message"></p>
+        </div>
+        <footer class="modal-actions">
+          <button id="warning-dismiss" class="modal-primary" type="button">Entendi</button>
+        </footer>
+      </section>
+    </div>
+
     <div id="order-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
       <section

@@ -10,6 +10,7 @@ const APP_PATH = path.join(__dirname, '..', 'app.js');
 const HTML_PATH = path.join(__dirname, '..', 'index.html');
 
 function criarElemento() {
+  const listeners = new Map();
   return {
     textContent: '',
     title: '',
@@ -17,9 +18,16 @@ function criarElemento() {
     hidden: false,
     innerHTML: '',
     classList: { add() {}, remove() {}, contains() { return false; } },
-    addEventListener() {},
+    addEventListener(type, handler) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(handler);
+    },
+    dispatch(type) {
+      for (const handler of listeners.get(type) || []) handler();
+    },
     setAttribute() {},
     getAttribute() { return null; },
+    focus() {},
     querySelector() { return criarElemento(); },
     getContext() { return {}; },
     add() {},
@@ -131,4 +139,22 @@ test('dashboard não exibe o badge redundante "Tempo real"', () => {
 
   assert.doesNotMatch(html, /id="connection"/);
   assert.doesNotMatch(js, /Tempo real/);
+});
+
+test('Atualizar abre popup centralizado quando o monitoramento está desligado', () => {
+  const { obter } = carregarApp();
+  const modal = obter('warning-modal');
+  const mensagem = obter('warning-message');
+  const eventos = obter('monitoring-events');
+
+  modal.hidden = true;
+
+  obter('refresh').dispatch('click');
+
+  assert.equal(modal.hidden, false);
+  assert.equal(mensagem.textContent, 'Ligue o monitoramento para atualizar os dados.');
+  assert.match(eventos.innerHTML, /Ligue o monitoramento para atualizar os dados/);
+
+  obter('warning-dismiss').dispatch('click');
+  assert.equal(modal.hidden, true);
 });
