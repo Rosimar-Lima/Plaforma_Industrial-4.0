@@ -132,6 +132,109 @@ test('reconecta após falha de leitura', async () => {
   assert.match(errors[0], /falha na leitura/);
 });
 
+test('fecha o adaptador antes de reconectar após falha de leitura', async () => {
+  let connects = 0;
+  let closes = 0;
+  let reads = 0;
+  const statuses = [];
+  const adapter = {
+    async connect() {
+      connects += 1;
+    },
+    async readTags() {
+      reads += 1;
+      if (reads === 1) throw new Error('TwinCAT em config');
+      return validValues();
+    },
+    async close() {
+      closes += 1;
+    },
+  };
+  const gateway = createGateway({
+    adapter,
+    publisher: {
+      async publish() {},
+      async publishStatus(status) {
+        statuses.push(status);
+      },
+    },
+    machineId: 'machine-01',
+    logger: silentLogger(),
+  });
+
+  await gateway.pollOnce();
+  assert.equal(closes, 1);
+  assert.equal(statuses[0].connected, false);
+  assert.equal(statuses[0].running, null);
+
+  await gateway.pollOnce();
+  assert.equal(connects, 2);
+  assert.equal(closes, 1);
+  assert.equal(statuses[1].connected, true);
+  assert.equal(statuses[1].running, true);
+});
+
+test('fecha o adaptador quando a conexão falha', async () => {
+  let connects = 0;
+  let closes = 0;
+  const adapter = {
+    async connect() {
+      connects += 1;
+      if (connects === 1) throw new Error('ADS fora');
+    },
+    async readTags() {
+      return validValues();
+    },
+    async close() {
+      closes += 1;
+    },
+  };
+  const gateway = createGateway({
+    adapter,
+    publisher: { async publish() {} },
+    machineId: 'machine-01',
+    logger: silentLogger(),
+  });
+
+  await gateway.pollOnce();
+  assert.equal(closes, 1);
+
+  await gateway.pollOnce();
+  assert.equal(connects, 2);
+  assert.equal(closes, 1);
+});
+
+test('limpa o estado da linha quando a leitura falha após operação', async () => {
+  const statuses = [];
+  let reads = 0;
+  const gateway = createGateway({
+    adapter: {
+      async connect() {},
+      async readTags() {
+        reads += 1;
+        if (reads === 1) return { ...validValues(), running: true };
+        throw new Error('TwinCAT desligado');
+      },
+      async close() {},
+    },
+    publisher: {
+      async publish() {},
+      async publishStatus(status) {
+        statuses.push(status);
+      },
+    },
+    machineId: 'machine-01',
+    logger: silentLogger(),
+  });
+
+  await gateway.pollOnce();
+  assert.equal(statuses[0].running, true);
+
+  await gateway.pollOnce();
+  assert.equal(statuses[1].running, null);
+  assert.equal(statuses[1].connected, false);
+});
+
 test('mantém a conexão quando a publicação falha', async () => {
   const errors = [];
   let connects = 0;

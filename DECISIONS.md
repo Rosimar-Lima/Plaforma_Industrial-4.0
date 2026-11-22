@@ -705,3 +705,50 @@ parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
 - O tracking é em memória: após reiniciar o backend, o estado volta a
   `unknown` até o próximo heartbeat (no máximo 1 s com o gateway ativo).
 - Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.
+
+---
+
+# ADR-021 — Reconexão ADS sem vazamento de portas locais
+
+**Status:** Aceita
+
+**Contexto:**
+
+Após o TwinCAT entrar em modo config e voltar, o gateway continuou offline para
+sempre, mesmo com a linha produzindo. O diagnóstico mostrava 5580 falhas e o
+erro `Connecting to 127.0.0.1:48898 failed - socket ended by remote (is the ADS
+port "0" already in use?)`. O processo do gateway mantinha **948 sockets**.
+
+Cada `Client` do `ads-client` registra uma porta ADS local no router. O gateway
+marcava `connected = false` quando a leitura falhava, mas **não fechava o cliente
+antigo**; no poll seguinte chamava `connect()` de novo. Isso criava um cliente
+por segundo, com `autoReconnect` ainda ativo, até esgotar as portas do
+router. O backend e o dashboard apenas refletiam esse estado: não havia nova
+telemetria para mostrar.
+
+**Decisão:**
+
+- Toda falha de `connect()` ou `readTags()` chama `adapter.close()` antes da
+  próxima tentativa (`descartarConexao()` no gateway).
+- `createAdsAdapter()` usa `autoReconnect: false` por padrão. A reconexão passa
+  a ser de responsabilidade exclusiva do gateway, em cada poll — sem duas
+  máquinas de estado competindo pela mesma porta local.
+- `connect()` fecha qualquer cliente existente antes de criar outro e, se falhar
+  (inclusive no `cacheSymbols()`/`cacheDataTypes()`), fecha o cliente parcial.
+- `close()` libera a referência antes de chamar `disconnect(true)`; como não há
+  subscrições ADS, o desligamento forçado é seguro e garantido mesmo quando o
+  router não responde ao desregistro gracioso.
+- Ao perder a leitura, o gateway também limpa `running` para `null`: sem
+  comunicação, o último estado da linha não é mais considerado conhecido.
+
+**Consequências:**
+
+- A volta do TwinCAT é reconhecida no primeiro poll seguinte, sem reiniciar o
+  gateway e sem acumular sockets.
+- O número de conexões locais permanece constante (observado em 6 após a
+  correção, contra 948 antes).
+- Unidades produzidas durante a janela em que o ADS estava fora **não** são
+  enviadas retroativamente: a PI40 só ingere o que o CLP expõe quando a leitura
+  volta. Se o contador do CLP tiver sido zerado nesse intervalo, esse incremento
+  não pode ser recuperado por ADS.
+- Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.

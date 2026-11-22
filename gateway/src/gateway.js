@@ -24,6 +24,20 @@ function createGateway({
   let failures = 0;
   let lastError = null;
 
+  // Fechar o adaptador antes de tentar um novo connect() é obrigatório: no ADS,
+  // cada cliente registra uma porta local no router. Sem isso, uma queda do
+  // TwinCAT gera um cliente novo a cada poll até esgotar as portas e o gateway
+  // nunca mais reconhece a volta da linha.
+  async function descartarConexao() {
+    connected = false;
+    running = null;
+    try {
+      await adapter.close?.();
+    } catch (error) {
+      logger.error(`[gateway] falha ao fechar conexão: ${error.message}`);
+    }
+  }
+
   async function reportStatus(timestamp) {
     const status = {
       machineId,
@@ -58,7 +72,7 @@ function createGateway({
       try {
         values = await adapter.readTags();
       } catch (error) {
-        connected = false;
+        await descartarConexao();
         failures += 1;
         lastError = error.message;
         logger.error(`[gateway] falha na leitura: ${error.message}`);
@@ -86,7 +100,7 @@ function createGateway({
         logger.error(`[gateway] falha na publicação: ${error.message}`);
       }
     } catch (error) {
-      connected = false;
+      await descartarConexao();
       failures += 1;
       lastError = error.message;
       logger.error(`[gateway] falha na conexão: ${error.message}`);

@@ -57,7 +57,10 @@ function loadConfig(env = process.env) {
       targetAmsNetId: env.ADS_TARGET_AMS_NET_ID || '39.90.64.65.1.1',
       targetAdsPort: toNumber(env.ADS_TARGET_PORT, 851, 'ADS_TARGET_PORT'),
       timeoutMs: toNumber(env.ADS_TIMEOUT_MS, 5000, 'ADS_TIMEOUT_MS'),
-      autoReconnect: toBoolean(env.ADS_AUTO_RECONNECT, true),
+      // O gateway recria o cliente ADS a cada poll quando a leitura falha.
+      // Duas reconexões automáticas (biblioteca + gateway) competem pela mesma
+      // porta local do router e impedem a recuperação após queda do TwinCAT.
+      autoReconnect: toBoolean(env.ADS_AUTO_RECONNECT, false),
     },
     opcua: {
       endpointUrl: env.OPCUA_ENDPOINT_URL || 'opc.tcp://localhost:4840',

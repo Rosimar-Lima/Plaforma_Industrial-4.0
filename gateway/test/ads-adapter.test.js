@@ -8,14 +8,17 @@ const { buildTelemetry } = require('../src/mapping');
 
 function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
   let instance = null;
+  const instances = [];
 
   class FakeAdsClient {
     constructor(options) {
       this.options = options;
       this.reads = [];
       this.cacheCalls = [];
+      this.disconnects = [];
       this.connected = false;
       instance = this;
+      instances.push(this);
     }
 
     on() {}
@@ -32,8 +35,9 @@ function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
       this.cacheCalls.push('dataTypes');
     }
 
-    async disconnect() {
+    async disconnect(force = false) {
       this.connected = false;
+      this.disconnects.push(force);
     }
 
     async readValue(symbol) {
@@ -54,6 +58,7 @@ function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
   return {
     Client: FakeAdsClient,
     getInstance: () => instance,
+    getInstances: () => instances,
   };
 }
 
@@ -181,6 +186,79 @@ test('telemetria gerada a partir da leitura ADS mantém contadores reais', async
   assert.equal(telemetry.production.filled, 123);
   assert.equal(telemetry.production.capped, 122);
   assert.equal(telemetry.production.total, 122);
+
+  await adapter.close();
+});
+
+test('connect() fecha o cliente anterior antes de criar outro', async () => {
+  const fake = createFakeClient({ 'GVL_HMI.bRunning': true });
+  const adapter = createAdsAdapter({
+    symbols: { running: 'GVL_HMI.bRunning' },
+    clientFactory: fake.Client,
+  });
+
+  await adapter.connect();
+  await adapter.connect();
+
+  const instancias = fake.getInstances();
+  assert.equal(instancias.length, 2);
+  assert.deepEqual(instancias[0].disconnects, [true]);
+  assert.equal(instancias[0].connected, false);
+  assert.equal(instancias[1].connected, true);
+  assert.deepEqual(instancias[1].disconnects, []);
+
+  await adapter.close();
+  assert.deepEqual(instancias[1].disconnects, [true]);
+});
+
+test('connect() libera a porta local se falhar ao carregar metadados', async () => {
+  class FakeClientFalho {
+    constructor(options) {
+      this.options = options;
+      this.desconectado = false;
+    }
+
+    on() {}
+
+    async connect() {}
+
+    async cacheSymbols() {
+      throw new Error('runtime reiniciando');
+    }
+
+    async disconnect() {
+      this.desconectado = true;
+    }
+  }
+
+  let instancia = null;
+  const adapter = createAdsAdapter({
+    symbols: { running: 'GVL_HMI.bRunning' },
+    clientFactory: class extends FakeClientFalho {
+      constructor(options) {
+        super(options);
+        instancia = this;
+      }
+    },
+  });
+
+  await assert.rejects(adapter.connect(), /runtime reiniciando/);
+  assert.equal(instancia.desconectado, true);
+
+  // Uma nova tentativa deve criar um cliente limpo, sem deixar o anterior preso.
+  await adapter.close();
+});
+
+test('autoReconnect desligado por padrão para evitar reconexões concorrentes', async () => {
+  const fake = createFakeClient({ 'GVL_HMI.bRunning': false });
+  const adapter = createAdsAdapter({
+    symbols: { running: 'GVL_HMI.bRunning' },
+    clientFactory: fake.Client,
+  });
+
+  await adapter.connect();
+
+  assert.equal(fake.getInstance().options.autoReconnect, false);
 
   await adapter.close();
 });
