@@ -14,7 +14,7 @@ const settings = normalizeSettings({ fillPercentMin: 20, fillPercentMax: 90 });
 
 function record(line = {}) {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp: '2026-01-01T00:00:00.000Z',
     line: { step: 2, fillPercent: 50, ...line },
   };

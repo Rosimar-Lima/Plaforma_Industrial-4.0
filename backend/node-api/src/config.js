@@ -23,6 +23,9 @@ const DEFAULTS = Object.freeze({
   shiftHours: DEFAULT_SHIFT_HOURS,
   dashboardDir: path.resolve(__dirname, '../../../dashboard/frontend'),
   maintenanceConfigPath: path.resolve(__dirname, '../config/maintenance.json'),
+  systemControlToken: 'pi40-local-control',
+  systemControlCommandPath: path.resolve(__dirname, '../../../runtime/system-command.json'),
+  systemControlOrigin: 'http://localhost:3000',
 });
 
 function loadEnvFiles() {
@@ -120,6 +123,11 @@ function loadConfig(env = process.env) {
     maintenanceConfigPath: env.MAINTENANCE_CONFIG
       ? path.resolve(env.MAINTENANCE_CONFIG)
       : DEFAULTS.maintenanceConfigPath,
+    systemControl: {
+      token: env.SYSTEM_CONTROL_TOKEN || DEFAULTS.systemControlToken,
+      commandPath: env.SYSTEM_CONTROL_COMMAND_PATH || DEFAULTS.systemControlCommandPath,
+      allowedOrigin: env.SYSTEM_CONTROL_ORIGIN || DEFAULTS.systemControlOrigin,
+    },
   };
 }
 

@@ -7,7 +7,7 @@ const { createSimulatorAdapter } = require('../src/adapters/simulator');
 
 test('simula a linha e expõe as leituras', async () => {
   const adapter = createSimulatorAdapter({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     plcVersion: 'gateway-sim',
     autoStart: true,
   });

@@ -44,6 +44,52 @@ tempo real por SSE (`/api/stream`), com fallback para polling. Para rodar sem
 Docker, use `cd backend/node-api && npm install && npm start` e o simulador com
 `node simulator/plc-simulator.js`.
 
+## Inicialização e encerramento do dia
+
+Ao abrir o dashboard, a tela **Preparando a PI40** aparece primeiro e verifica
+API, stream, gateway, CLP, telemetria e banco. Quando todas as verificações
+passam, o painel é aberto automaticamente, sem precisar clicar. Se a comunicação
+com o CLP falhar, a tela mostra o que conferir (PLC conectado no TwinCAT XAE e
+runtime em `Run`) e oferece entrar em modo limitado. O atalho
+`INICIAR-PI40.cmd` abre `http://localhost:3000/?boot=1` para forçar a tela de
+abertura; um `F5` no mesmo dia volta direto ao painel.
+
+Para encerrar, **desligue a linha física primeiro** e clique em **Encerrar dia**
+no topo do painel. O primeiro clique já consulta
+`/api/machines/1/connection`: se o CLP estiver sem comunicação, o encerramento é
+disparado na hora, sem confirmação adicional. Se ainda houver heartbeat — mesmo
+com `running=false` (linha apenas parada) — o modal mostra o bloqueio e continua
+verificando a cada 2 s; basta desligar a linha, sem clicar de novo. Ao liberar, a
+tela pausa o dashboard, fecha o SSE e aciona o encerramento diretamente: o
+backend escreve o pedido em `runtime/system-command.json` (bind mount
+compartilhado com o host) e o gateway, rodando como serviço Windows elevado,
+dispara `scripts/pi40-dia.ps1 -Action Stop`. O script para o gateway e todos os
+containers (`docker compose stop` — nunca `down -v`, para preservar o volume do
+banco), confere as amostras persistidas e verifica se sobrou algum processo da
+PI40. Nenhum comando é escrito no CLP. Ao concluir, a página
+`http://localhost:3000/` é fechada automaticamente. O progresso pode ser
+acompanhado em `GET /api/system/status`.
+
+Nenhuma porta é aberta para essa ponte: o container e o host trocam apenas o
+arquivo em `runtime/`. O pedido carrega o token `SYSTEM_CONTROL_TOKEN`, o mesmo
+definido como `PI40_CONTROL_TOKEN` no XML do serviço, e expira em 60 s. O
+endpoint do backend exige ainda o cabeçalho `x-pi40-control: 1` e um `Origin`
+local, para impedir que um site externo dispare a ação. Se o acionamento
+automático falhar, o modal oferece o atalho `ENCERRAR-PI40.cmd` como alternativa
+manual. Esse atalho usa `scripts/encerrar-pi40.ps1`, que consulta o heartbeat e
+só dispara o Stop quando a linha está `offline`; com a linha apenas parada ele
+bloqueia e orienta desligá-la fisicamente.
+
+Para começar o dia, execute `INICIAR-PI40.cmd` (ou
+`powershell -File scripts\pi40-dia.ps1 -Action Start`): ele sobe backend e
+PostgreSQL, aguarda `/health`, inicia o serviço `PI40Gateway` e espera o
+heartbeat e a telemetria de `Linha-01`. O simulador do Compose permanece parado
+enquanto o gateway real estiver ativo.
+
+Unidades produzidas enquanto a PI40 estiver encerrada não são recuperadas por
+ADS depois — por isso a linha física precisa estar desligada antes do
+encerramento.
+
 Alertas são gerados na ingestão quando o nível de envase sai dos limites
 configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além de
 `ALERT_STOPPED_MS`. O dashboard exibe os alertas abertos em tempo real e permite

@@ -15,7 +15,7 @@ const timestamp = '2026-01-01T00:00:00.000Z';
 
 test('monta telemetria completa e válida', () => {
   const payload = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     plcVersion: '1.0.0',
     values: {
@@ -33,7 +33,7 @@ test('monta telemetria completa e válida', () => {
     },
   });
 
-  assert.equal(payload.machineId, 'machine-01');
+  assert.equal(payload.machineId, 'Linha-01');
   assert.equal(payload.timestamp, timestamp);
   assert.equal(payload.plcVersion, '1.0.0');
   assert.equal(payload.line.step, 2);
@@ -47,7 +47,7 @@ test('monta telemetria completa e válida', () => {
 
 test('deriva intertravamentos e posição quando ausentes', () => {
   const payload = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     values: { sensorS1: true, sensorS2: true, conveyorOn: false },
   });
@@ -62,7 +62,7 @@ test('deriva intertravamentos e posição quando ausentes', () => {
 
 test('respeita a etapa explícita do PLC', () => {
   const payload = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     values: { step: 3, conveyorOn: true, fillPercent: 100 },
   });
@@ -105,7 +105,7 @@ test('normaliza percentual e contadores', () => {
 
 test('produção total usa min(envasadas, tampadas) quando ausente', () => {
   const payload = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     values: { filled: 12, capped: 9 },
   });
@@ -115,7 +115,7 @@ test('produção total usa min(envasadas, tampadas) quando ausente', () => {
 
 test('plcVersion da leitura tem prioridade', () => {
   const payload = buildTelemetry({
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp,
     plcVersion: 'fallback',
     values: { plcVersion: '3.2.1' },

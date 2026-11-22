@@ -565,3 +565,395 @@ Diferenciar o critério de uso por componente em
   (rolamento já em 80%, motor em 60%).
 - O reset ao concluir a OS zera `hours` para componentes de horas e `cycles`
   para os de ciclos.
+
+---
+
+# ADR-018 — Integração ADS com a Linha de Envase em somente leitura
+
+**Status:** Aceita
+
+**Contexto:**
+
+A Linha de Envase original expõe seus símbolos pelo TwinCAT/ADS. O gateway da
+PI40 precisa ler esse estado para refletir a operação real da linha. O projeto
+de origem também possui símbolos de comando (`bCmdStart`, `bCmdStop`,
+`bCmdReset`), que não fazem parte da responsabilidade da plataforma conforme a
+ADR-002.
+
+A conexão confirmada para o ensaio é `39.90.64.65.1.1:851`, com o gateway
+executando no mesmo host do TwinCAT. O `ads-client` devolve o resultado de
+`readValue()` como `{ value, rawValue, dataType, symbol }`; usar esse objeto
+diretamente zerava a telemetria no mapeamento da PI40.
+
+**Decisão:**
+
+- O adaptador ADS da PI40 apenas lê símbolos. Nenhum comando de start, stop ou
+  reset será escrito no CLP.
+- `readValue()` é desembrulhado: o gateway extrai `result.value` quando o retorno
+  for um objeto de leitura, mantendo compatibilidade com leituras escalares.
+- Após conectar (e após cada reconexão), o adaptador chama `cacheSymbols()` e
+  `cacheDataTypes()`, como no projeto de origem, para evitar consulta de
+  metadados a cada amostra.
+- O mapa de símbolos permanece em `gateway/plc.config.json`, com os nomes
+  originais `GVL_HMI.*`.
+- A telemetria gerada pelo gateway continua usando o contrato já validado de
+  `POST /api/telemetry`; nenhuma alteração de contrato é necessária no backend.
+- Qualquer mudança futura que permita escrita no CLP exige uma nova ADR que
+  revogue esta e a ADR-002.
+
+**Consequências:**
+
+- A PI40 não pode parar, iniciar ou reiniciar a linha; a operação permanece na
+  IHM original.
+- A causa raiz da telemetria zerada está eliminada, inclusive em leituras de
+  booleanos, contadores e versão do PLC.
+- A conexão real depende de rota ADS válida e do runtime do TwinCAT. Falta de
+  resposta deve ser tratada como **sem comunicação**, não como "linha parada".
+- O diagnóstico de símbolos pode ser feito sem publicar dados no backend.
+
+---
+
+# ADR-019 — Produção acumulada resistente ao reset da linha
+
+**Status:** Aceita
+
+**Contexto:**
+
+O usuário confirmou que, ao resetar a Linha de Envase, os contadores
+`nBottlesFilled`, `nBottlesCapped` e `nProductionTotal` voltam a zero. A PI40
+deve continuar exibindo o contador atual zerado, sem apagar a produção já
+registrada. O código anterior tratava queda de contador apenas como delta zero
+no OEE, no histórico por hora/turno e na manutenção, mas não mantinha um total
+acumulado explícito nem registrava o reset como evento.
+
+**Decisão:**
+
+- Criar a tabela `production_totals`, com `accumulated_produced`,
+  `accumulated_good`, `last_counter`, `last_good_counter`, `last_reset_at` e
+  `updated_at`, uma linha por máquina.
+- A cada amostra:
+  - se os contadores atuais forem maiores ou iguais aos anteriores, somar apenas
+    o delta ao acumulado;
+  - se qualquer contador diminuir, manter o acumulado, registrar `last_reset_at`
+    e emitir o evento `production.reset`;
+  - atualizar os últimos contadores para os valores atuais, mesmo após reset.
+- O histórico em `telemetry` e `production` permanece intacto. Nenhuma linha
+  antiga é apagada ou reescrita.
+- A API expõe `GET /api/machines/:id/production/total` e publica eventos SSE
+  `production` com `action: 'update' | 'reset'`.
+- O dashboard mostra o contador atual da linha e, separadamente, o **acumulado
+  no banco**; o reset é visível no título do card.
+- Volumes existentes aplicam `database/migrations/004_production_totals.sql`,
+  que inicializa o acumulado com o último contador conhecido do histórico.
+
+**Consequências:**
+
+- Reset da linha não zera a produção acumulada da PI40, nem distorce OEE,
+  histórico por hora/turno ou manutenção por ciclos.
+- A primeira amostra após um reset pode chegar com `0`; ela é aceita e passa a
+  ser a nova base dos deltas.
+- Como a tabela é por máquina e a ingestão usa `FOR UPDATE` na transação,
+  amostras concorrentes não perdem incrementos.
+- Eventos `production.reset` permitem montar, no futuro, um histórico de resets
+  sem consultar o payload bruto.
+- Esta decisão não altera o contrato de `POST /api/telemetry`.
+
+---
+
+# ADR-020 — Estado de comunicação da linha no dashboard
+
+**Status:** Aceita
+
+**Contexto:**
+
+Com a telemetria real ativa, o gateway publica amostras somente quando consegue
+ler o CLP. Se o ADS cair ou o TwinCAT desligar, o backend para de receber dados,
+mas o dashboard continuava exibindo a última amostra — sem distinguir **linha
+parada** (`bRunning = false`, com o CLP respondendo) de **sem comunicação**.
+
+**Decisão:**
+
+- O gateway publica um heartbeat leve em `POST /api/gateway/status` a cada ciclo
+  de polling, com `connected`, `running`, `lastReadAt`, `timestamp`, `failures` e
+  `error`. O status é enviado mesmo quando a leitura falha.
+- O backend rastreia o heartbeat em memória (`createConnectionTracker`) e
+  considera a conexão expirada após 10 s sem sinal. Um `sweep` periódico emite
+  `connection.lost` quando o gateway para sem avisar.
+- A API expõe `GET /api/machines/:id/connection`, resolvendo o código da máquina
+  (`Linha-01`) a partir do id numérico da URL.
+- O stream SSE publica eventos `connection` com `action: 'update'`,
+  `'connection.lost'` e `'connection.restored'`.
+- O dashboard mostra um badge separado: **Linha: operando** (verde),
+  **Linha: parada** (âmbar, CLP responde) e **Linha: sem comunicação** (vermelho).
+  O badge antigo “Tempo real” (dashboard↔API) foi removido por ser redundante:
+  o badge **Linha** já mostra o estado relevante da comunicação. O fallback para
+  polling continua ativo quando o SSE falha, apenas sem indicador visual próprio.
+- O card principal **Operação** reflete o mesmo estado, com prioridade para a
+  comunicação: `Linha sem comunicação` (vermelho), `Operação Parada` (âmbar) ou
+  `Linha em operação` (verde). Assim a perda de comunicação não passa despercebida
+  no indicador principal. O texto usa fonte menor e quebra de linha para não
+  ultrapassar as bordas do card.
+- O status não é persistido em banco: ele representa o estado atual da sessão,
+  não um histórico de falhas.
+
+**Consequências:**
+
+- “Linha parada” e “sem comunicação” deixam de ser ambíguos no painel.
+- Reset da aplicação ou desligamento dos motores com o CLP ainda respondendo
+  continuam sendo `Parada` — não são falha de comunicação. O reset de produção
+  é sinalizado separadamente pelo evento `production.reset`.
+- Se o backend cair, o gateway continua publicando telemetria quando volta; o
+  heartbeat expirado é corrigido no primeiro status recebido.
+- O tracking é em memória: após reiniciar o backend, o estado volta a
+  `unknown` até o próximo heartbeat (no máximo 1 s com o gateway ativo).
+- Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.
+
+---
+
+# ADR-021 — Reconexão ADS sem vazamento de portas locais
+
+**Status:** Aceita
+
+**Contexto:**
+
+Após o TwinCAT entrar em modo config e voltar, o gateway continuou offline para
+sempre, mesmo com a linha produzindo. O diagnóstico mostrava 5580 falhas e o
+erro `Connecting to 127.0.0.1:48898 failed - socket ended by remote (is the ADS
+port "0" already in use?)`. O processo do gateway mantinha **948 sockets**.
+
+Cada `Client` do `ads-client` registra uma porta ADS local no router. O gateway
+marcava `connected = false` quando a leitura falhava, mas **não fechava o cliente
+antigo**; no poll seguinte chamava `connect()` de novo. Isso criava um cliente
+por segundo, com `autoReconnect` ainda ativo, até esgotar as portas do
+router. O backend e o dashboard apenas refletiam esse estado: não havia nova
+telemetria para mostrar.
+
+**Decisão:**
+
+- Toda falha de `connect()` ou `readTags()` chama `adapter.close()` antes da
+  próxima tentativa (`descartarConexao()` no gateway).
+- `createAdsAdapter()` usa `autoReconnect: false` por padrão. A reconexão passa
+  a ser de responsabilidade exclusiva do gateway, em cada poll — sem duas
+  máquinas de estado competindo pela mesma porta local.
+- `connect()` fecha qualquer cliente existente antes de criar outro e, se falhar
+  (inclusive no `cacheSymbols()`/`cacheDataTypes()`), fecha o cliente parcial.
+- `close()` libera a referência antes de chamar `disconnect(true)`; como não há
+  subscrições ADS, o desligamento forçado é seguro e garantido mesmo quando o
+  router não responde ao desregistro gracioso.
+- Ao perder a leitura, o gateway também limpa `running` para `null`: sem
+  comunicação, o último estado da linha não é mais considerado conhecido.
+
+**Consequências:**
+
+- A volta do TwinCAT é reconhecida no primeiro poll seguinte, sem reiniciar o
+  gateway e sem acumular sockets.
+- O número de conexões locais permanece constante (observado em 6 após a
+  correção, contra 948 antes).
+- Unidades produzidas durante a janela em que o ADS estava fora **não** são
+  enviadas retroativamente: a PI40 só ingere o que o CLP expõe quando a leitura
+  volta. Se o contador do CLP tiver sido zerado nesse intervalo, esse incremento
+  não pode ser recuperado por ADS.
+- Nenhum comando é escrito no CLP; ADR-002 e ADR-018 permanecem válidas.
+
+---
+
+# ADR-022 - Gateway real como serviço Windows no host
+
+**Status:** Aceita
+
+**Contexto:**
+
+O gateway ADS rodava como processo destacado no host. Após um reinício da
+máquina, a telemetria real parava e o dashboard passava a `Sem comunicação` até
+alguém iniciar o processo manualmente. A rota ADS estática para
+`39.90.64.65.1.1` vive no router do TwinCAT instalado no Windows, então mover o
+gateway para um container Linux do Compose exigiria recriar essa rota e mudar a
+forma de conexão, sem ganho operacional neste cenário.
+
+**Decisão:**
+
+- O gateway de produção continua no host e passa a ser um serviço Windows
+  (`PI40Gateway`) usando WinSW 2.13.0 como wrapper.
+- A configuração `gateway/service/PI40-Gateway.xml` é versionada: entrypoint
+  `src/index.js`, diretório de trabalho `gateway/`, início automático atrasado,
+  reinício após falha, logs rotacionados em `gateway/service/logs/` e variáveis
+  de ambiente explícitas (protocolo, backend, máquina, polling e ADS).
+- `gateway/scripts/install-service.ps1` instala, remove, inicia, para, reinicia
+  e consulta o serviço. Exige PowerShell elevado, verifica Node.js, dependências
+  e o arquivo de configuração, baixa o WinSW e valida o SHA-256 publicado antes
+  de usar o binário. O `.exe` baixado não é versionado.
+- As variáveis do serviço são a fonte de configuração em produção e têm
+  prioridade sobre `gateway/.env`; desenvolvimento local continua com `npm start`.
+- O serviço usa a conta `LocalSystem` (padrão do WinSW), que enxerga a rota ADS
+  de máquina e o backend em `localhost`.
+- O simulador do Compose permanece parado enquanto o gateway real estiver ativo,
+  para não publicar telemetria sintética na mesma máquina.
+
+**Consequências:**
+
+- O gateway sobe automaticamente com o Windows e volta após falha, sem depender
+  de sessão interativa nem de inicialização manual.
+- Instalar, atualizar ou remover o serviço exige direitos de administrador; o
+  binário do wrapper é verificado por hash e atualizado apenas pelo instalador.
+- Trocar protocolo, NetId, porta ou backend exige editar o XML e reinstalar o
+  serviço; um `gateway/.env` local não altera o serviço já instalado.
+- O `<executable>` assume Node.js em `C:\Program Files\nodejs\node.exe`; em
+  instalações diferentes, o XML deve ser ajustado antes de instalar.
+- A topologia permanece: PLC/linha como fonte da verdade, gateway no host/edge,
+  backend e banco no Compose. ADR-002, ADR-018, ADR-020 e ADR-021 continuam
+  válidas; nenhum comando é escrito no CLP.
+
+---
+
+# ADR-023 - Heartbeat com estado da linha desconhecido
+
+**Status:** Aceita
+
+**Contexto:**
+
+A ADR-021 passou a limpar `running` para `null` quando a leitura ADS falha, para
+não mostrar um estado obsoleto da linha. Porém a validação
+`POST /api/gateway/status` aceitava `running` apenas como booleano quando o
+campo estava presente. Com o gateway rodando como serviço e o TwinCAT fora do
+modo `Run`, o backend respondia `400 invalid_payload` a cada heartbeat. O
+tracker nunca era atualizado e o dashboard ficava preso em `unknown` em vez de
+mostrar `Sem comunicação`.
+
+**Decisão:**
+
+- `running: null` é aceito no heartbeat como "estado da linha desconhecido";
+  valores diferentes de `null` e de booleano continuam sendo rejeitados.
+- O gateway mantém o comportamento da ADR-021: envia `null` enquanto não consegue
+  ler o CLP, independentemente de a causa ser ADS fora, TwinCAT em config ou
+  CLP desligado.
+- `createConnectionTracker` já normaliza `null` para o estado desconhecido;
+  nenhuma mudança foi necessária no contrato SSE, no dashboard ou na telemetria.
+
+**Consequências:**
+
+- O heartbeat com falha de leitura volta a ser registrado: o dashboard mostra
+  `Sem comunicação` com o erro real do ADS, e a transição `online → offline`
+  volta a ser emitida no stream.
+- `unknown` continua sendo apenas o estado antes do primeiro heartbeat; com o
+  serviço ativo, ele dura no máximo um ciclo de polling.
+- A validação continua estrita para valores inválidos como `1`, `'true'` ou
+  objeto; apenas `null` foi acrescentado ao contrato do heartbeat.
+
+---
+
+---
+
+# ADR-024 - Padronização dos códigos de linha como `Linha-NN`
+
+**Status:** Aceita
+
+**Contexto:**
+
+O código `machine-01` veio do simulador original e foi usado como padrão no
+gateway, no Compose, na API e na documentação. Ele é apenas um identificador de
+texto — não tem relação com o NetId ADS nem com o CLP — mas não escala quando a
+PI40 passa a receber telemetria de mais de uma linha. Além disso, o gateway
+publica sempre o mesmo `machineId`, e o backend cria uma nova linha na tabela
+`machines` sempre que recebe um código ainda não visto; trocar só a configuração
+do gateway criaria uma máquina nova (id 2) e deixaria todo o histórico no id 1.
+
+**Decisão:**
+
+- O código da linha de envase passa a ser `Linha-01`. O padrão para linhas
+  adicionais é `Linha-NN` (`Linha-02`, `Linha-03`, ...), com `name` igual ao
+  `code`.
+- O valor é configurável por `GATEWAY_MACHINE_ID` no XML do serviço, por
+  `MACHINE_ID`/`GATEWAY_MACHINE_ID` no `.env` e por `SMOKE_MACHINE_ID` no smoke
+  test; `Linha-01` é apenas o padrão.
+- Na implantação com dados existentes, o gateway foi parado, o registro foi
+  renomeado com `UPDATE machines SET code = 'Linha-01', name = 'Linha-01' WHERE
+  code = 'machine-01'` e o serviço foi reiniciado. O `id` numérico (1) foi
+  mantido, preservando telemetria, produção, alertas, manutenção e o acumulado.
+- Nenhum símbolo ADS, rota estática ou comando para o CLP foi alterado.
+
+**Consequências:**
+
+- O dashboard mostra uma única máquina, agora chamada `Linha-01`, e o acumulado
+  continua associado ao id 1.
+- Outras linhas podem ser adicionadas apontando um gateway com outro
+  `GATEWAY_MACHINE_ID`; cada código gera sua própria linha, heartbeat, série de
+  telemetria e acumulado.
+- A URL da API continua usando o id numérico; o texto `Linha-NN` aparece como
+  `code`/`name` e no payload de telemetria.
+- A troca em um host com dados exige parar o gateway antes do `UPDATE`, para não
+  recriar a linha antiga com o código antigo no próximo ciclo de polling.
+
+---
+
+# ADR-025 — Telas de inicialização e encerramento seguro da PI40
+
+**Status:** Aceita
+
+**Contexto:**
+
+A PI40 passou a ser operada diariamente e o painel passou a ser a interface
+principal da plataforma. A prontidão já era calculada no modal de diagnóstico,
+mas o operador precisava abrir esse modal para entender por que o painel estava
+sem dados; e o desligamento dependia de uma sequência manual de comandos
+(Docker + serviço Windows), sem confirmação de que os dados tinham sido
+persistidos. O navegador não pode parar um serviço Windows nem containers, e o
+backend roda em um container Linux, sem acesso direto ao PowerShell do host.
+
+**Decisão:**
+
+- O dashboard ganha uma tela de inicialização em tela cheia. Ela reaproveita os
+  seis estágios já existentes (API, stream, gateway, CLP, telemetria e banco),
+  mostra progresso, eventos e ações de diagnóstico, nova tentativa e entrada em
+  modo limitado. Quando todos os estágios ficam `done`, o painel é aberto
+  automaticamente, sem exigir clique. A data é guardada em `localStorage`
+  (`pi40.boot.date`); `INICIAR-PI40.cmd` abre `?boot=1` para repetir a tela a cada
+  inicialização, enquanto um `F5` no mesmo dia volta direto ao painel.
+- Ao clicar em **Encerrar dia**, o modal consulta imediatamente
+  `/api/machines/:id/connection`. Se estiver `offline` (sem leitura ADS), o
+  encerramento começa no mesmo clique, sem checkbox nem segunda confirmação.
+  Com heartbeat ativo — inclusive com `running=false` (linha apenas parada) — o
+  modal mostra o bloqueio e repete a verificação a cada 2 s, liberando
+  automaticamente assim que a linha for desligada. O botão **Verificar
+  novamente** força uma checagem imediata. Ao liberar, ele pausa o dashboard,
+  fecha o SSE e mostra as cinco etapas com o mesmo componente de estágios do
+  diagnóstico.
+- Quem executa as operações é o script local `scripts/pi40-dia.ps1`, com ações
+  `Start`, `Stop` e `Status`. O gateway, já rodando como serviço Windows sob
+  `LocalSystem`, vigia o arquivo `runtime/system-command.json` e dispara o script
+  de forma destacada. O backend expõe `POST /api/system/stop` e
+  `POST /api/system/start`, que escrevem esse pedido com token e expiração de
+  60 s em um diretório compartilhado por bind mount; exigem ainda o cabeçalho
+  `x-pi40-control: 1` e um `Origin` local (defesa contra form cross-origin).
+  Nenhuma porta é aberta: neste ambiente Docker/WSL o container não consegue
+  alcançar portas do host Windows, então a troca é feita por arquivo.
+  O script escreve `dashboard/frontend/system-status.json`, lido por
+  `GET /api/system/status`.
+- Os atalhos `INICIAR-PI40.cmd` e `ENCERRAR-PI40.cmd` permanecem como caminho
+  manual alternativo, útil se o agente estiver indisponível. O de encerramento
+  usa `scripts/encerrar-pi40.ps1` e aplica a mesma regra do botão: consulta o
+  heartbeat e só dispara o Stop com a linha `offline`.
+- O encerramento usa `docker compose stop` para **todos** os serviços (backend,
+  PostgreSQL e simulador), nunca `down -v`. Antes de parar os containers, o
+  script conta as amostras persistidas; depois, verifica se sobrou algum processo
+  da PI40. Não há escrita no CLP. Ao concluir, o dashboard tenta fechar a aba e,
+  se o navegador bloquear `window.close()`, substitui a página por `about:blank`.
+- Como o backend é parado no penúltimo passo, o dashboard infere a conclusão
+  quando o endpoint deixa de responder logo após a etapa `containers` ficar
+  ativa; a validação final de containers parados é feita pelo próprio script.
+
+**Consequências:**
+
+- O operador vê o motivo da ausência de dados já na abertura, com instrução
+  específica para o erro de ADS/TwinCAT encontrado na integração real.
+- O desligamento deixa de depender de decorar comandos. Só acontece quando o CLP
+  não responde (linha desligada pelo operador), para todos os containers e
+  processos, sem apagar volume nem histórico, e fecha a página do dashboard.
+- O botão passou a acionar o encerramento diretamente, sem pedir que o operador
+  execute o atalho. Não há execução remota irrestrita: nenhuma porta é aberta,
+  o arquivo de comando exige token e expira, e o endpoint do backend exige
+  cabeçalho customizado e origem local. O atalho manual continua disponível como
+  fallback.
+- Unidades produzidas com a PI40 parada continuam não recuperáveis por ADS
+  (consequência já registrada na ADR-021).
+
+---

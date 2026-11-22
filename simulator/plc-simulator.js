@@ -3,7 +3,7 @@
 const { createLineState, tick, toTelemetry } = require('./line-state');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
-const MACHINE_ID = process.env.MACHINE_ID || 'machine-01';
+const MACHINE_ID = process.env.MACHINE_ID || 'Linha-01';
 const TICK_MS = Number(process.env.TICK_MS || 100);
 const PUBLISH_MS = Number(process.env.PUBLISH_MS || 1000);
 const AUTO_START = (process.env.AUTO_START || 'true') !== 'false';

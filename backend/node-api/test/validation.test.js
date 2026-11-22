@@ -3,11 +3,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { validateTelemetry } = require('../src/validation');
+const { validateTelemetry, validateGatewayStatus } = require('../src/validation');
 
 function validPayload() {
   return {
-    machineId: 'machine-01',
+    machineId: 'Linha-01',
     timestamp: '2026-01-01T00:00:00.000Z',
     plcVersion: '1.0.0',
     line: {
@@ -30,7 +30,7 @@ function validPayload() {
 test('aceita telemetria válida e normaliza o timestamp', () => {
   const result = validateTelemetry(validPayload());
   assert.equal(result.ok, true);
-  assert.equal(result.value.machineId, 'machine-01');
+  assert.equal(result.value.machineId, 'Linha-01');
   assert.equal(result.value.timestamp, '2026-01-01T00:00:00.000Z');
   assert.equal(result.value.line.step, 2);
   assert.equal(result.value.production.total, 9);
@@ -95,4 +95,60 @@ test('rejeita contadores negativos', () => {
   const payload = validPayload();
   payload.production.filled = -1;
   assert.equal(validateTelemetry(payload).ok, false);
+});
+
+function validStatus() {
+  return {
+    machineId: 'Linha-01',
+    connected: true,
+    running: false,
+    lastReadAt: '2026-11-21T20:00:00.000Z',
+    timestamp: '2026-11-21T20:00:00.000Z',
+    failures: 0,
+    error: null,
+  };
+}
+
+test('valida status do gateway', () => {
+  const result = validateGatewayStatus(validStatus());
+  assert.equal(result.ok, true);
+  assert.equal(result.value.machineId, 'Linha-01');
+  assert.equal(result.value.connected, true);
+  assert.equal(result.value.running, false);
+});
+
+test('aceita status sem campos opcionais', () => {
+  const result = validateGatewayStatus({ machineId: 'Linha-01', connected: false });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.running, null);
+  assert.equal(result.value.failures, 0);
+});
+
+test('aceita running nulo quando a leitura do CLP falha', () => {
+  const status = validStatus();
+  status.connected = false;
+  status.running = null;
+  status.error = 'TwinCAT desligado';
+
+  const result = validateGatewayStatus(status);
+  assert.equal(result.ok, true);
+  assert.equal(result.value.running, null);
+  assert.equal(result.value.error, 'TwinCAT desligado');
+});
+
+test('rejeita status com campos obrigatórios ou tipos inválidos', () => {
+  assert.equal(validateGatewayStatus(null).ok, false);
+  assert.equal(validateGatewayStatus({ machineId: 'Linha-01' }).ok, false);
+
+  const status = validStatus();
+  status.connected = 'true';
+  status.running = 1;
+  status.failures = -1;
+  status.lastReadAt = 'ontem';
+  const result = validateGatewayStatus(status);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('connected')));
+  assert.ok(result.errors.some((error) => error.includes('running')));
+  assert.ok(result.errors.some((error) => error.includes('failures')));
+  assert.ok(result.errors.some((error) => error.includes('lastReadAt')));
 });

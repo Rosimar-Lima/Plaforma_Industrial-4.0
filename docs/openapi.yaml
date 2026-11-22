@@ -34,6 +34,120 @@ paths:
                     type: string
                     example: ok
 
+  /api/system/stop:
+    post:
+      tags: [Saúde]
+      summary: Aciona o encerramento seguro da PI40 no host
+      description: |
+        O backend escreve o pedido em `runtime/system-command.json`; o gateway,
+        elevado no host Windows, lê o arquivo e dispara
+        `scripts/pi40-dia.ps1 -Action Stop`. Nenhuma porta é aberta. Exige o
+        cabeçalho `x-pi40-control: 1` e um `Origin` local; um site externo não
+        consegue disparar a ação. A resposta é imediata (202); acompanhe o
+        progresso em `/api/system/status`.
+      parameters:
+        - in: header
+          name: x-pi40-control
+          required: true
+          schema:
+            type: string
+            example: '1'
+      responses:
+        '202':
+          description: Pedido aceito pelo agente local
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                    example: true
+                  action:
+                    type: string
+                    example: stop
+        '403':
+          description: Cabeçalho de controle ausente ou origem não permitida
+        '502':
+          description: Agente local indisponível ou não autorizado
+
+  /api/system/start:
+    post:
+      tags: [Saúde]
+      summary: Aciona a inicialização da PI40 no host
+      description: Mesmo contrato e mecanismo de `/api/system/stop`, com `-Action Start`.
+      parameters:
+        - in: header
+          name: x-pi40-control
+          required: true
+          schema:
+            type: string
+            example: '1'
+      responses:
+        '202':
+          description: Pedido aceito pelo agente local
+        '403':
+          description: Cabeçalho de controle ausente ou origem não permitida
+        '502':
+          description: Agente local indisponível ou não autorizado
+
+  /api/system/status:
+    get:
+      tags: [Saúde]
+      summary: Progresso da inicialização ou do encerramento da PI40
+      description: |
+        Endpoint somente leitura. O progresso é escrito no host pelo script
+        local `scripts/pi40-dia.ps1` e lido do arquivo
+        `dashboard/frontend/system-status.json`. A API nunca executa comandos
+        no sistema operacional nem no CLP.
+      responses:
+        '200':
+          description: Estado atual (idle quando não há operação)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum: [idle, running, done, error]
+                    example: running
+                  action:
+                    type: string
+                    nullable: true
+                    enum: [Start, Stop]
+                    example: Stop
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: gateway
+                        label:
+                          type: string
+                          example: Parar serviço PI40Gateway
+                        status:
+                          type: string
+                          enum: [pending, active, done, error]
+                        detail:
+                          type: string
+                  message:
+                    type: string
+                    example: Parando o serviço PI40Gateway.
+                  updatedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '500':
+          description: Arquivo de status inválido
+
   /api/telemetry:
     post:
       tags: [Ingestão]
@@ -208,7 +322,7 @@ paths:
                 data: {}
 
                 event: telemetry
-                data: {"machineId":"machine-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
+                data: {"machineId":"Linha-01","timestamp":"2026-01-01T00:00:00.000Z","plcVersion":"1.0.0","line":{"step":2,"running":true},"production":{"filled":10,"capped":9,"total":9}}
 
                 event: maintenance
                 data: {"machineId":1,"action":"created","order":{"id":3,"component_code":"fill-valve","status":"planned"}}
@@ -593,7 +707,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          example: machine-01
+          example: Linha-01
         timestamp:
           type: string
           format: date-time
@@ -624,10 +738,10 @@ components:
           type: integer
         code:
           type: string
-          example: machine-01
+          example: Linha-01
         name:
           type: string
-          example: machine-01
+          example: Linha-01
         location:
           type: string
           nullable: true
@@ -954,7 +1068,7 @@ components:
           example: accepted
         machineId:
           type: string
-          example: machine-01
+          example: Linha-01
         recordedAt:
           type: string
           format: date-time
