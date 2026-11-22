@@ -98,6 +98,21 @@ p {
   font-weight: 600;
 }
 
+.shutdown-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.shutdown-btn:hover {
+  color: #fecaca;
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.18);
+}
+
 .brand h1 {
   font-size: 18px;
   letter-spacing: 0.3px;
@@ -1062,6 +1077,165 @@ button:hover {
   cursor: not-allowed;
 }
 
+/* Tela de inicialização do dia */
+.boot-screen[hidden] {
+  display: none;
+}
+
+.boot-screen {
+  position: fixed;
+  inset: 0;
+  /* Abaixo dos modais (z-index 100) para o diagnóstico abrir por cima. */
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: radial-gradient(circle at 50% 0%, #16294a 0%, #070d18 70%);
+}
+
+.boot-card {
+  width: min(720px, 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(24, 39, 65, 0.96), rgba(11, 18, 32, 0.98));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.boot-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.boot-mark {
+  flex: 0 0 auto;
+  width: 62px;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #04121f;
+  background: linear-gradient(135deg, var(--accent), #22c55e);
+  box-shadow: 0 0 28px rgba(56, 189, 248, 0.25);
+}
+
+.boot-kicker {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--accent);
+}
+
+.boot-head h2 {
+  font-size: 24px;
+  margin: 3px 0 5px;
+}
+
+.boot-progress {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(11, 18, 32, 0.5);
+}
+
+.boot-stages {
+  margin-top: 16px;
+}
+
+.boot-hint {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.07);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.boot-hint.error {
+  border-left-color: var(--warn);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.boot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* Encerramento seguro */
+.shutdown-body {
+  display: grid;
+  gap: 16px;
+}
+
+.shutdown-notice {
+  padding: 12px 14px;
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.shutdown-notice strong {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--warn);
+}
+
+.shutdown-notice p {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.shutdown-headline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.shutdown-steps {
+  margin-top: 0;
+}
+
+.shutdown-instruction {
+  padding: 12px 14px;
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.06);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.shutdown-instruction code {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.shutdown-final {
+  padding: 14px;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
@@ -1087,5 +1261,25 @@ button:hover {
   .summary-grid,
   .maintenance-grid {
     grid-template-columns: 1fr;
+  }
+
+  .boot-screen {
+    padding: 12px;
+  }
+
+  .boot-card {
+    padding: 18px;
+  }
+
+  .boot-head h2 {
+    font-size: 20px;
+  }
+
+  .boot-actions {
+    justify-content: stretch;
+  }
+
+  .boot-actions button {
+    flex: 1 1 100%;
   }
 }

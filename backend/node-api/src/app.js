@@ -1,6 +1,8 @@
 'use strict';
 
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
 const { validateTelemetry, validateGatewayStatus } = require('./validation');
 const { createStreamHub } = require('./stream');
 const { createConnectionTracker } = require('./connection');
@@ -30,6 +32,7 @@ function createApp({
   telemetryLimit = '100kb',
   nominalCapacityPerHour = 400,
   dashboardDir = null,
+  systemStatusPath = null,
   productionSettings = {
     timeZone: DEFAULT_TIME_ZONE,
     shiftStartHour: DEFAULT_SHIFT_START_HOUR,
@@ -446,6 +449,34 @@ function createApp({
       res.json({ limit, outbox });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.get('/api/system/status', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const statusFile =
+      systemStatusPath || (dashboardDir ? path.join(dashboardDir, 'system-status.json') : null);
+    const idle = {
+      state: 'idle',
+      action: null,
+      steps: [],
+      message: 'Nenhuma operação de sistema em andamento.',
+      updatedAt: null,
+    };
+
+    if (!statusFile) {
+      res.json(idle);
+      return;
+    }
+
+    try {
+      res.json({ ...idle, ...JSON.parse(fs.readFileSync(statusFile, 'utf8')) });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        res.json(idle);
+        return;
+      }
+      res.status(500).json({ error: 'system_status_unavailable' });
     }
   });
 

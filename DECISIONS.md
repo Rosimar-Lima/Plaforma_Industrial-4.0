@@ -841,6 +841,54 @@ mostrar `Sem comunicação`.
 
 ---
 
+# ADR-025 — Telas de inicialização e encerramento seguro da PI40
+
+**Status:** Aceita
+
+**Contexto:**
+
+A PI40 passou a ser operada diariamente e o painel passou a ser a interface
+principal da plataforma. A prontidão já era calculada no modal de diagnóstico,
+mas o operador precisava abrir esse modal para entender por que o painel estava
+sem dados; e o desligamento dependia de uma sequência manual de comandos
+(Docker + serviço Windows), sem confirmação de que os dados tinham sido
+persistidos. O navegador não pode parar um serviço Windows nem containers, e um
+endpoint que executasse PowerShell no backend abriria brecha de segurança.
+
+**Decisão:**
+
+- O dashboard ganha uma tela de inicialização em tela cheia no primeiro acesso
+  do dia. Ela reaproveita os seis estágios já existentes (API, stream, gateway,
+  CLP, telemetria e banco), mostra progresso, eventos e ações de diagnóstico,
+  nova tentativa e entrada em modo limitado. A data é guardada em `localStorage`
+  (`pi40.boot.date`), então recarregar no mesmo dia não repete a tela.
+- O botão **Encerrar dia** abre um modal de confirmação que pausa o dashboard,
+  fecha o SSE e acompanha o progresso do encerramento. As cinco etapas são
+  exibidas com o mesmo componente de estágios do diagnóstico.
+- Quem executa as operações é o script local `scripts/pi40-dia.ps1`, com ações
+  `Start`, `Stop` e `Status`. Os atalhos `INICIAR-PI40.cmd` e
+  `ENCERRAR-PI40.cmd` solicitam elevação via UAC. O script escreve
+  `dashboard/frontend/system-status.json`, lido por
+  `GET /api/system/status` (somente leitura, sem execução remota).
+- O encerramento usa `docker compose stop`, nunca `down -v`. Antes de parar os
+  containers, o script conta as amostras persistidas. Não há escrita no CLP.
+- Como o backend é parado no penúltimo passo, o dashboard infere a conclusão
+  quando o endpoint deixa de responder logo após a etapa `containers` ficar
+  ativa; a validação final de containers parados é feita pelo próprio script.
+
+**Consequências:**
+
+- O operador vê o motivo da ausência de dados já na abertura, com instrução
+  específica para o erro de ADS/TwinCAT encontrado na integração real.
+- O desligamento deixa de depender de decorar comandos e termina com a mensagem
+  "É seguro desligar o computador", sem apagar volume nem histórico.
+- Nenhum endpoint privilegiado foi adicionado: qualquer ação no sistema
+  operacional exige a execução local do atalho e a confirmação do UAC.
+- Unidades produzidas com a PI40 parada continuam não recuperáveis por ADS
+  (consequência já registrada na ADR-021).
+
+---
+
 # ADR-024 - Padronização dos códigos de linha como `Linha-NN`
 
 **Status:** Aceita

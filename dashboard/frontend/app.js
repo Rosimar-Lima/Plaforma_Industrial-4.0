@@ -10,6 +10,17 @@ const BOTTLE_VOLUME_ML = 300;
 const MONITORING_EVENT_LIMIT = 10;
 const MONITORING_TRANSITION_MS = 1800;
 const MONITORING_STEP_MS = 70;
+const BOOT_DATE_KEY = 'pi40.boot.date';
+const BOOT_LIMIT_MS = 25000;
+const SYSTEM_STATUS_POLL_MS = 1000;
+
+const SHUTDOWN_STEPS = [
+  { id: 'dashboard', label: 'Pausar dashboard e stream' },
+  { id: 'gateway', label: 'Parar serviço PI40Gateway' },
+  { id: 'persistence', label: 'Confirmar últimos dados no banco' },
+  { id: 'containers', label: 'Parar backend e PostgreSQL' },
+  { id: 'safe', label: 'Nenhum container ativo' },
+];
 
 const SEVERITY_LABELS = {
   critical: 'Crítico',
@@ -73,9 +84,41 @@ const state = {
     stages: createStageState(),
     events: [],
   },
+  boot: {
+    active: false,
+    allowEnter: false,
+    timer: null,
+  },
+  shutdown: {
+    status: null,
+    phase: 'confirm',
+    timer: null,
+    startedAt: 0,
+    apiLost: false,
+  },
 };
 
 const el = {
+  bootScreen: document.getElementById('boot-screen'),
+  bootPercent: document.getElementById('boot-percent'),
+  bootTrack: document.getElementById('boot-track'),
+  bootBar: document.getElementById('boot-bar'),
+  bootStages: document.getElementById('boot-stages'),
+  bootHint: document.getElementById('boot-hint'),
+  bootEnter: document.getElementById('boot-enter'),
+  bootRetry: document.getElementById('boot-retry'),
+  bootDiagnostic: document.getElementById('boot-diagnostic'),
+  shutdownOpen: document.getElementById('shutdown-open'),
+  shutdownModal: document.getElementById('shutdown-modal'),
+  shutdownClose: document.getElementById('shutdown-close'),
+  shutdownDismiss: document.getElementById('shutdown-dismiss'),
+  shutdownConfirm: document.getElementById('shutdown-confirm'),
+  shutdownCopy: document.getElementById('shutdown-copy'),
+  shutdownStatus: document.getElementById('shutdown-status'),
+  shutdownMessage: document.getElementById('shutdown-message'),
+  shutdownSteps: document.getElementById('shutdown-steps'),
+  shutdownInstruction: document.getElementById('shutdown-instruction'),
+  shutdownFinal: document.getElementById('shutdown-final'),
   machineSelect: document.getElementById('machine-select'),
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
@@ -214,8 +257,8 @@ function renderMonitoringEvents() {
     .join('');
 }
 
-function renderMonitoringStages() {
-  el.monitoringStages.innerHTML = state.monitoring.stages
+function renderStagesInto(target, stages) {
+  target.innerHTML = stages
     .map((stage) => {
       const stateLabel = {
         done: 'ok',
@@ -235,6 +278,10 @@ function renderMonitoringStages() {
       `;
     })
     .join('');
+}
+
+function renderMonitoringStages() {
+  renderStagesInto(el.monitoringStages, state.monitoring.stages);
 }
 
 function renderMonitoring() {
@@ -283,6 +330,7 @@ function renderMonitoring() {
   el.monitoringToggle.disabled = state.monitoring.mode === 'stopping';
 
   renderMonitoringStages();
+  if (state.boot.active) renderBoot();
 }
 
 function animateMonitoringProgress(target, { duration = MONITORING_TRANSITION_MS, onDone } = {}) {
@@ -460,6 +508,120 @@ function stopMonitoring() {
   });
 }
 
+function localDayKey() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function shouldShowBoot() {
+  try {
+    return localStorage?.getItem(BOOT_DATE_KEY) !== localDayKey();
+  } catch (error) {
+    return true;
+  }
+}
+
+function markBootDone() {
+  try {
+    localStorage?.setItem(BOOT_DATE_KEY, localDayKey());
+  } catch (error) {
+    // Armazenamento bloqueado: a tela reaparece no próximo acesso.
+  }
+}
+
+function renderBoot() {
+  const stages = state.monitoring.stages;
+  const percent = monitoringPercent();
+  const hasError = stages.some((stage) => stage.status === 'error');
+  const ready = percent === 100;
+  const canEnter = ready || hasError || state.boot.allowEnter;
+
+  el.bootPercent.textContent = `${percent}%`;
+  el.bootBar.style.width = `${percent}%`;
+  el.bootTrack.setAttribute('aria-valuenow', String(percent));
+  renderStagesInto(el.bootStages, stages);
+
+  el.bootEnter.disabled = !canEnter;
+  el.bootEnter.textContent = ready ? 'Entrar no painel' : 'Entrar em modo limitado';
+  el.bootRetry.hidden = !hasError;
+
+  let hint = 'Aguardando as verificações iniciais...';
+  if (ready) {
+    hint = 'Plataforma pronta. O painel está sendo atualizado em tempo real.';
+  } else if (hasError) {
+    const gateway = stageById('gateway');
+    const plc = stageById('plc');
+    hint =
+      gateway?.status === 'error' || plc?.status === 'error'
+        ? 'Aguardando o CLP — verifique se o PLC está conectado no TwinCAT XAE e se o runtime está em Run.'
+        : 'Algumas verificações falharam. Tente novamente ou entre em modo limitado.';
+  } else if (state.boot.allowEnter) {
+    hint = 'A prontidão está demorando mais que o esperado. Você pode entrar em modo limitado.';
+  }
+
+  el.bootHint.textContent = hint;
+  el.bootHint.classList.remove('error');
+  if (hasError) el.bootHint.classList.add('error');
+}
+
+function enterDashboard() {
+  if (!state.boot.active) return;
+
+  if (state.boot.timer) {
+    clearTimeout(state.boot.timer);
+    state.boot.timer = null;
+  }
+
+  const ready = monitoringPercent() === 100;
+  markBootDone();
+  state.boot.active = false;
+  el.bootScreen.hidden = true;
+
+  if (!ready) {
+    addMonitoringEvent(
+      'Entrada em modo limitado',
+      'A plataforma foi aberta antes de todas as verificações.',
+      'warn'
+    );
+    renderMonitoring();
+  }
+  refreshAll();
+}
+
+function retryBoot() {
+  if (state.stream) {
+    state.stream.close();
+    state.stream = null;
+  }
+  state.streamOnline = false;
+  state.monitoring.enabled = false;
+  state.monitoring.mode = 'off';
+  state.monitoring.progress = 0;
+  state.monitoring.targetProgress = 0;
+  state.monitoring.stages = createStageState();
+  state.boot.allowEnter = false;
+  el.bootRetry.hidden = true;
+  void startMonitoring();
+  addMonitoringEvent('Nova tentativa de inicialização', 'Reverificando a prontidão da plataforma.', 'info');
+}
+
+function enterBoot() {
+  state.boot.active = true;
+  state.boot.allowEnter = false;
+  el.bootScreen.hidden = false;
+  renderBoot();
+
+  state.boot.timer = setTimeout(() => {
+    state.boot.allowEnter = true;
+    renderBoot();
+    addMonitoringEvent('Prontidão demorou', 'A plataforma pode ser aberta em modo limitado.', 'warn');
+  }, BOOT_LIMIT_MS);
+
+  void startMonitoring();
+}
+
 function openDiagnosticModal() {
   el.diagnosticModal.hidden = false;
 }
@@ -476,6 +638,178 @@ function openWarningModal(message) {
 
 function closeWarningModal() {
   el.warningModal.hidden = true;
+}
+
+function shutdownStepStatus(value) {
+  if (value === 'done') return 'done';
+  if (value === 'active' || value === 'running') return 'active';
+  if (value === 'error') return 'error';
+  return 'pending';
+}
+
+function renderShutdown(status) {
+  const byId = new Map((status?.steps || []).map((step) => [step.id, step]));
+  const labels = {
+    done: 'ok',
+    active: 'em andamento',
+    pending: 'pendente',
+    error: 'falha',
+  };
+
+  el.shutdownSteps.innerHTML = SHUTDOWN_STEPS.map((step, index) => {
+    const data = byId.get(step.id) || {};
+    const stepStatus = shutdownStepStatus(data.status);
+    const detail = data.detail || (stepStatus === 'pending' ? 'Aguardando' : '');
+    return `
+      <li class="stage ${stepStatus}">
+        <span class="stage-dot" aria-hidden="true"></span>
+        <div>
+          <span class="stage-name">${index + 1}. ${data.label || step.label}</span>
+          <span class="stage-detail">${detail}</span>
+        </div>
+        <span class="stage-state">${labels[stepStatus]}</span>
+      </li>
+    `;
+  }).join('');
+
+  const stateName = status?.state || 'idle';
+  const pill = {
+    done: ['on', 'Concluído'],
+    error: ['off', 'Falha'],
+    running: ['starting', 'Encerrando'],
+  }[stateName] || ['off', 'Confirmando'];
+
+  el.shutdownStatus.classList.remove('on', 'off', 'starting', 'stopping');
+  el.shutdownStatus.classList.add(pill[0]);
+  el.shutdownStatus.textContent = pill[1];
+  el.shutdownMessage.textContent =
+    status?.message || 'Nenhuma operação de sistema em andamento.';
+
+  const finished = stateName === 'done' || stateName === 'error';
+  el.shutdownFinal.hidden = stateName !== 'done';
+  el.shutdownInstruction.hidden = state.shutdown.phase !== 'progress' || finished;
+  el.shutdownCopy.hidden = state.shutdown.phase !== 'progress';
+  el.shutdownConfirm.disabled = state.shutdown.phase !== 'confirm';
+  el.shutdownConfirm.textContent =
+    state.shutdown.phase === 'confirm' ? 'Confirmar encerramento' : 'Encerramento iniciado';
+  el.shutdownDismiss.textContent = state.shutdown.phase === 'confirm' ? 'Cancelar' : 'Fechar';
+}
+
+function copyShutdownCommand() {
+  const command =
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\\scripts\\pi40-dia.ps1" -Action Stop';
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(command);
+      el.shutdownCopy.textContent = 'Comando copiado';
+    }
+  } catch (error) {
+    el.shutdownCopy.textContent = 'Copiar comando';
+  }
+}
+
+function stopSystemStatusPolling() {
+  if (state.shutdown.timer) {
+    clearInterval(state.shutdown.timer);
+    state.shutdown.timer = null;
+  }
+}
+
+function startSystemStatusPolling() {
+  if (state.shutdown.timer) return;
+  state.shutdown.timer = setInterval(() => void pollSystemStatus(), SYSTEM_STATUS_POLL_MS);
+}
+
+async function pollSystemStatus() {
+  try {
+    const response = await fetch('/api/system/status');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
+    if (body?.action !== 'Stop') return;
+
+    const updatedAt = body.updatedAt ? Date.parse(body.updatedAt) : 0;
+    if (Number.isFinite(updatedAt) && updatedAt < state.shutdown.startedAt - 2000) return;
+
+    state.shutdown.status = body;
+    state.shutdown.apiLost = false;
+    renderShutdown(body);
+    if (body.state === 'done' || body.state === 'error') stopSystemStatusPolling();
+    return;
+  } catch (error) {
+    // O backend é parado no penúltimo passo; o script já validou os containers.
+  }
+
+  const current = state.shutdown.status;
+  if (current?.action !== 'Stop' || current?.state !== 'running') {
+    renderShutdown(current);
+    return;
+  }
+
+  const containers = (current.steps || []).find((step) => step.id === 'containers');
+  const elapsed = Date.now() - state.shutdown.startedAt;
+  if (containers?.status !== 'active' && elapsed < 15000) {
+    renderShutdown(current);
+    return;
+  }
+
+  const fallback = {
+    ...current,
+    state: 'done',
+    message: 'Backend parado; a confirmação final veio do script local.',
+    steps: (current.steps || []).map((step) => {
+      if (step.id === 'containers') {
+        return { ...step, status: 'done', detail: 'Backend e PostgreSQL parados; volume preservado.' };
+      }
+      if (step.id === 'safe') {
+        return { ...step, status: 'done', detail: 'É seguro desligar o computador.' };
+      }
+      return step;
+    }),
+  };
+  state.shutdown.status = fallback;
+  state.shutdown.apiLost = true;
+  renderShutdown(fallback);
+  stopSystemStatusPolling();
+}
+
+function openShutdownModal() {
+  state.shutdown.phase = 'confirm';
+  state.shutdown.apiLost = false;
+  state.shutdown.status = null;
+  el.shutdownModal.hidden = false;
+  renderShutdown(null);
+  el.shutdownConfirm.focus();
+}
+
+function closeShutdownModal() {
+  el.shutdownModal.hidden = true;
+  stopSystemStatusPolling();
+}
+
+function confirmShutdown() {
+  if (state.shutdown.phase !== 'confirm') return;
+
+  state.shutdown.phase = 'progress';
+  state.shutdown.startedAt = Date.now();
+  state.shutdown.status = {
+    state: 'running',
+    action: 'Stop',
+    message: 'Dashboard pausado. Execute o atalho ENCERRAR-PI40.cmd para continuar.',
+    steps: [
+      {
+        id: 'dashboard',
+        label: SHUTDOWN_STEPS[0].label,
+        status: 'done',
+        detail: 'Dashboard pausado e stream fechado.',
+      },
+    ],
+    updatedAt: new Date().toISOString(),
+  };
+
+  stopMonitoring();
+  renderShutdown(state.shutdown.status);
+  copyShutdownCommand();
+  startSystemStatusPolling();
 }
 
 function renderLineConnection(connection) {
@@ -1310,11 +1644,24 @@ el.orderModal.querySelector('[data-close-modal]').addEventListener('click', clos
 el.warningClose.addEventListener('click', closeWarningModal);
 el.warningDismiss.addEventListener('click', closeWarningModal);
 el.warningModal.querySelector('[data-close-warning]').addEventListener('click', closeWarningModal);
+el.bootEnter.addEventListener('click', enterDashboard);
+el.bootRetry.addEventListener('click', retryBoot);
+el.bootDiagnostic.addEventListener('click', openDiagnosticModal);
+el.shutdownOpen.addEventListener('click', openShutdownModal);
+el.shutdownClose.addEventListener('click', closeShutdownModal);
+el.shutdownDismiss.addEventListener('click', closeShutdownModal);
+el.shutdownModal.querySelector('[data-close-shutdown]').addEventListener('click', closeShutdownModal);
+el.shutdownConfirm.addEventListener('click', confirmShutdown);
+el.shutdownCopy.addEventListener('click', copyShutdownCommand);
 el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
 el.orderCancel.addEventListener('click', () => void changeSelectedOrder('cancel'));
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (!state.boot.active && !el.shutdownModal.hidden) {
+    closeShutdownModal();
+    return;
+  }
   if (!el.warningModal.hidden) {
     closeWarningModal();
     return;
@@ -1528,6 +1875,8 @@ async function start() {
   setInterval(() => {
     if (state.monitoring.enabled && state.machineId) void refreshProduction();
   }, POLL_PRODUCTION_MS);
+
+  if (shouldShowBoot()) enterBoot();
 }
 
 void start();

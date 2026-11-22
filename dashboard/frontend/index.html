@@ -7,6 +7,43 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="boot-screen" class="boot-screen" hidden>
+      <div class="boot-card">
+        <header class="boot-head">
+          <div class="boot-mark" aria-hidden="true">PI40</div>
+          <div>
+            <p class="boot-kicker">Inicialização do sistema</p>
+            <h2>Preparando a PI40</h2>
+            <p class="muted">Verificando API, gateway, CLP, telemetria e banco.</p>
+          </div>
+        </header>
+        <div class="boot-progress">
+          <div class="progress-head">
+            <span>Prontidão da plataforma</span>
+            <strong id="boot-percent">0%</strong>
+          </div>
+          <div
+            id="boot-track"
+            class="progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-label="Prontidão da plataforma"
+          >
+            <div id="boot-bar" class="progress-bar"></div>
+          </div>
+        </div>
+        <ul id="boot-stages" class="stage-list boot-stages" aria-live="polite"></ul>
+        <p id="boot-hint" class="boot-hint">Aguardando as verificações iniciais...</p>
+        <footer class="boot-actions">
+          <button id="boot-retry" type="button" hidden>Tentar novamente</button>
+          <button id="boot-diagnostic" type="button">Abrir diagnóstico</button>
+          <button id="boot-enter" type="button" class="modal-primary" disabled>Entrar no painel</button>
+        </footer>
+      </div>
+    </div>
+
     <header class="topbar">
       <div class="brand">
         <button
@@ -39,6 +76,9 @@
         </label>
         <button id="refresh" type="button">Atualizar</button>
         <button id="diagnostic-open" class="diagnostic-btn" type="button">Diagnóstico</button>
+        <button id="shutdown-open" class="shutdown-btn" type="button" title="Encerrar a PI40 com segurança">
+          Encerrar dia
+        </button>
         <span id="line-connection" class="badge line-unknown" title="Comunicação com o CLP da linha">
           Linha: —
         </span>
@@ -288,6 +328,62 @@
         </div>
         <footer class="modal-actions">
           <button id="warning-dismiss" class="modal-primary" type="button">Entendi</button>
+        </footer>
+      </section>
+    </div>
+
+    <div id="shutdown-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-shutdown></div>
+      <section
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shutdown-title"
+      >
+        <header class="modal-head">
+          <div>
+            <h3 id="shutdown-title">Encerramento seguro da PI40</h3>
+            <p class="muted diagnostic-subtitle">
+              A linha física não é desligada; apenas a coleta de dados é interrompida.
+            </p>
+          </div>
+          <button
+            id="shutdown-close"
+            type="button"
+            class="modal-close"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+        <div class="modal-body shutdown-body">
+          <div class="shutdown-notice">
+            <strong>Antes de continuar</strong>
+            <p>
+              A linha de envase NÃO será desligada. Unidades produzidas enquanto a
+              PI40 estiver parada não são recuperadas por ADS depois.
+            </p>
+          </div>
+          <div class="shutdown-headline">
+            <span id="shutdown-status" class="status-pill off">Confirmando</span>
+            <span id="shutdown-message" class="muted">Nenhuma operação em andamento.</span>
+          </div>
+          <ol id="shutdown-steps" class="shutdown-steps"></ol>
+          <p id="shutdown-instruction" class="shutdown-instruction" hidden>
+            Execute o atalho <code>ENCERRAR-PI40.cmd</code> na pasta do projeto. O
+            Windows pedirá confirmação (UAC) e esta tela acompanhará o progresso
+            automaticamente.
+          </p>
+          <p id="shutdown-final" class="shutdown-final" hidden>
+            É seguro desligar o computador.
+          </p>
+        </div>
+        <footer class="modal-actions">
+          <button id="shutdown-dismiss" type="button">Cancelar</button>
+          <button id="shutdown-copy" type="button" hidden>Copiar comando</button>
+          <button id="shutdown-confirm" type="button" class="modal-danger">
+            Confirmar encerramento
+          </button>
         </footer>
       </section>
     </div>

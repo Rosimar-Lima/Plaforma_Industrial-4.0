@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { createApp } = require('../src/app');
@@ -1125,5 +1127,47 @@ test('POST /api/gateway/status publica eventos de perda e restabelecimento no st
     assert.equal(connectionEvents[4].data.action, 'connection.restored');
   } finally {
     await app.close();
+  }
+});
+
+test('GET /api/system/status retorna idle quando não há arquivo de status', async () => {
+  const app = await startApp(createFakeRepository());
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/status`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const body = await response.json();
+    assert.equal(body.state, 'idle');
+    assert.deepEqual(body.steps, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/system/status devolve o progresso escrito pelo script local', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi40-status-'));
+  const statusFile = path.join(dir, 'system-status.json');
+  fs.writeFileSync(
+    statusFile,
+    JSON.stringify({
+      state: 'running',
+      action: 'Stop',
+      steps: [{ id: 'gateway', label: 'Parar gateway', status: 'active' }],
+      message: 'Parando o serviço PI40Gateway.',
+      updatedAt: '2026-11-22T12:00:00.000Z',
+    })
+  );
+  const app = await startApp(createFakeRepository(), { systemStatusPath: statusFile });
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/system/status`);
+    const body = await response.json();
+    assert.equal(body.state, 'running');
+    assert.equal(body.action, 'Stop');
+    assert.equal(body.steps[0].status, 'active');
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

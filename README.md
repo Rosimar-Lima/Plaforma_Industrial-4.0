@@ -44,6 +44,31 @@ tempo real por SSE (`/api/stream`), com fallback para polling. Para rodar sem
 Docker, use `cd backend/node-api && npm install && npm start` e o simulador com
 `node simulator/plc-simulator.js`.
 
+## Inicialização e encerramento do dia
+
+No primeiro acesso do dia, o dashboard abre a tela **Preparando a PI40**. Ela
+verifica API, stream, gateway, CLP, telemetria e banco antes de liberar o painel.
+Se a comunicação com o CLP falhar, a tela mostra o que conferir (PLC conectado no
+TwinCAT XAE e runtime em `Run`) e oferece entrar em modo limitado. A data fica em
+`localStorage`, então um `F5` no mesmo dia volta direto ao painel.
+
+Para encerrar, use o botão **Encerrar dia** no topo do painel e confirme. A tela
+pausa o dashboard e fecha o SSE, e pede para executar o atalho
+`ENCERRAR-PI40.cmd` na raiz do projeto (o Windows solicita confirmação de
+administrador). O script `scripts/pi40-dia.ps1 -Action Stop` para o gateway,
+confere as amostras persistidas e roda `docker compose stop` — nunca `down -v`,
+para preservar o volume do banco. Nenhum comando é escrito no CLP. O progresso
+pode ser acompanhado em `GET /api/system/status`.
+
+Para começar o dia, execute `INICIAR-PI40.cmd` (ou
+`powershell -File scripts\pi40-dia.ps1 -Action Start`): ele sobe backend e
+PostgreSQL, aguarda `/health`, inicia o serviço `PI40Gateway` e espera o
+heartbeat e a telemetria de `Linha-01`. O simulador do Compose permanece parado
+enquanto o gateway real estiver ativo.
+
+Unidades produzidas enquanto a PI40 estiver encerrada não são recuperadas por
+ADS depois — a linha física continua funcionando, apenas a coleta para.
+
 Alertas são gerados na ingestão quando o nível de envase sai dos limites
 configurados (`ALERT_FILL_PERCENT_MIN/MAX`) ou quando a linha fica parada além de
 `ALERT_STOPPED_MS`. O dashboard exibe os alertas abertos em tempo real e permite

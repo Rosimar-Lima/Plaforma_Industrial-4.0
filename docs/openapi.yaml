@@ -34,6 +34,63 @@ paths:
                     type: string
                     example: ok
 
+  /api/system/status:
+    get:
+      tags: [Saúde]
+      summary: Progresso da inicialização ou do encerramento da PI40
+      description: |
+        Endpoint somente leitura. O progresso é escrito no host pelo script
+        local `scripts/pi40-dia.ps1` e lido do arquivo
+        `dashboard/frontend/system-status.json`. A API nunca executa comandos
+        no sistema operacional nem no CLP.
+      responses:
+        '200':
+          description: Estado atual (idle quando não há operação)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum: [idle, running, done, error]
+                    example: running
+                  action:
+                    type: string
+                    nullable: true
+                    enum: [Start, Stop]
+                    example: Stop
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: gateway
+                        label:
+                          type: string
+                          example: Parar serviço PI40Gateway
+                        status:
+                          type: string
+                          enum: [pending, active, done, error]
+                        detail:
+                          type: string
+                  message:
+                    type: string
+                    example: Parando o serviço PI40Gateway.
+                  updatedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '500':
+          description: Arquivo de status inválido
+
   /api/telemetry:
     post:
       tags: [Ingestão]

@@ -34,7 +34,14 @@ function criarElemento() {
   };
 }
 
-function carregarApp() {
+function chaveHoje() {
+  const agora = new Date();
+  const mes = String(agora.getMonth() + 1).padStart(2, '0');
+  const dia = String(agora.getDate()).padStart(2, '0');
+  return `${agora.getFullYear()}-${mes}-${dia}`;
+}
+
+function carregarApp(opcoes = {}) {
   const elementos = new Map();
   const obter = (id) => {
     if (!elementos.has(id)) elementos.set(id, criarElemento());
@@ -50,7 +57,15 @@ function carregarApp() {
     },
     window: { addEventListener() {} },
     EventSource: undefined,
-    fetch: async () => ({ ok: false, status: 503 }),
+    localStorage: opcoes.localStorage || {
+      getItem: () => chaveHoje(),
+      setItem() {},
+    },
+    fetch: opcoes.fetch || (async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    })),
     setInterval() { return 0; },
     setTimeout() { return 0; },
     requestAnimationFrame(cb) { return setTimeout(() => cb(Date.now()), 0); },
@@ -79,7 +94,12 @@ function carregarApp() {
       '  state.samples = amostra;' +
       '  renderOperation();' +
       '  return { texto: el.running.textContent, cor: el.running.style.color };' +
-      '};',
+      '};' +
+      '\nglobalThis.__pronto = () => {' +
+      '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
+      '  renderBoot();' +
+      '};' +
+      '\nglobalThis.__statusSistema = (status) => renderShutdown(status);',
     contexto
   );
 
@@ -157,4 +177,65 @@ test('Atualizar abre popup centralizado quando o monitoramento está desligado',
 
   obter('warning-dismiss').dispatch('click');
   assert.equal(modal.hidden, true);
+});
+
+test('Tela de inicialização aparece no primeiro acesso do dia e libera o painel', () => {
+  const armazenamento = {
+    valor: null,
+    getItem() { return this.valor; },
+    setItem(chave, valor) { this.valor = valor; },
+  };
+  const { contexto, obter } = carregarApp({ localStorage: armazenamento });
+
+  assert.equal(obter('boot-screen').hidden, false);
+  assert.equal(obter('boot-enter').disabled, true);
+  assert.match(obter('boot-hint').textContent, /verificações iniciais/);
+
+  contexto.__pronto();
+  assert.equal(obter('boot-enter').disabled, false);
+  assert.equal(obter('boot-enter').textContent, 'Entrar no painel');
+
+  obter('boot-enter').dispatch('click');
+  assert.equal(obter('boot-screen').hidden, true);
+  assert.equal(armazenamento.valor, chaveHoje());
+});
+
+test('Encerramento seguro confirma o painel pausado e mostra o progresso do script', () => {
+  const { contexto, obter } = carregarApp();
+  obter('shutdown-modal').hidden = true;
+
+  assert.equal(obter('shutdown-modal').hidden, true);
+  obter('shutdown-open').dispatch('click');
+  assert.equal(obter('shutdown-modal').hidden, false);
+  assert.equal(obter('shutdown-confirm').disabled, false);
+
+  obter('shutdown-confirm').dispatch('click');
+  assert.equal(obter('shutdown-confirm').disabled, true);
+  assert.equal(obter('shutdown-instruction').hidden, false);
+  assert.match(obter('shutdown-steps').innerHTML, /1\. Pausar dashboard e stream/);
+  assert.match(obter('shutdown-steps').innerHTML, /stage done/);
+
+  contexto.__statusSistema({
+    state: 'running',
+    action: 'Stop',
+    message: 'Parando o gateway.',
+    steps: [
+      { id: 'dashboard', label: 'Pausar dashboard e stream', status: 'done', detail: 'Pausado.' },
+      { id: 'gateway', label: 'Parar serviço PI40Gateway', status: 'active', detail: 'Parando...' },
+    ],
+  });
+  assert.match(obter('shutdown-steps').innerHTML, /stage active/);
+  assert.equal(obter('shutdown-status').textContent, 'Encerrando');
+
+  contexto.__statusSistema({
+    state: 'done',
+    action: 'Stop',
+    message: 'Encerramento seguro concluído.',
+    steps: [],
+  });
+  assert.equal(obter('shutdown-final').hidden, false);
+  assert.match(fs.readFileSync(HTML_PATH, 'utf8'), /É seguro desligar o computador\./);
+
+  obter('shutdown-dismiss').dispatch('click');
+  assert.equal(obter('shutdown-modal').hidden, true);
 });

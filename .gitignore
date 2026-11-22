@@ -30,6 +30,9 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Progresso da inicialização/encerramento escrito pelo script local
+dashboard/frontend/system-status.json
+
 # Wrapper do serviço Windows (baixado pelo instalador)
 gateway/service/*.exe
 
