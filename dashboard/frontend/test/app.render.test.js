@@ -176,6 +176,17 @@ test('dashboard não exibe o badge redundante "Tempo real"', () => {
   assert.doesNotMatch(js, /Tempo real/);
 });
 
+test('Topbar não repete o status da linha ao lado de Encerrar dia', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf8');
+  const js = fs.readFileSync(APP_PATH, 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+
+  assert.doesNotMatch(html, /id="line-connection"/);
+  assert.doesNotMatch(js, /el\.lineConnection/);
+  assert.match(js, /card Operação/);
+  assert.doesNotMatch(css, /\.badge\.line-/);
+});
+
 test('Atualizar abre popup centralizado quando o monitoramento está desligado', () => {
   const { obter } = carregarApp();
   const modal = obter('warning-modal');

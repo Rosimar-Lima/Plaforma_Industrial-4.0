@@ -990,3 +990,32 @@ inicialização não tinha feito nada.
 - O fluxo de encerramento e o acumulado no banco não foram alterados.
 
 ---
+
+# ADR-027 — Remoção do indicador de linha na topbar
+
+**Status:** Aceita
+
+**Contexto:**
+
+O card principal **Operação** passou a mostrar `Linha sem comunicação`,
+`Operação Parada` ou `Linha em operação` com a mesma informação do badge da
+topbar. Manter os dois indicadores, um deles ao lado do botão **Encerrar dia**,
+era redundante e ocupava espaço na barra de controles.
+
+**Decisão:**
+
+- Remover `#line-connection` da topbar e a lógica que atualizava esse badge.
+- Manter `state.lineConnection`, `renderOperation()` e os estágios de
+  monitoramento: apenas a apresentação duplicada foi eliminada.
+- Remover também as regras CSS `.badge` e `.badge.line-*` que ficaram sem uso.
+- O estado da linha continua disponível no card **Operação**, no diagnóstico e
+  no modal de encerramento, que exibe a checagem de `offline` antes de parar a
+  PI40.
+
+**Consequências:**
+
+- A topbar fica mais limpa; não há duas leituras diferentes para o mesmo estado.
+- O backdrop do modal e o fluxo de encerramento não mudaram; a verificação de
+  heartbeat continua sendo feita em `/api/machines/:id/connection`.
+
+---

@@ -58,7 +58,9 @@ As verificações continuam sendo feitas assim que os serviços respondem; a
 apresentação é revelada de cerca de 1 em 1 segundo e a tela fica visível por no
 mínimo 9 segundos antes de entrar no painel. Isso dá tempo de acompanhar o
 processo sem atrasar a prontidão real de API, gateway, CLP, telemetria e banco.
-Falhas aparecem na etapa correspondente assim que ela é revelada.
+Falhas aparecem na etapa correspondente assim que ela é revelada. O estado da
+linha é exibido no card **Operação**; a topbar não repete esse status ao lado de
+**Encerrar dia**.
 
 Para encerrar, **desligue a linha física primeiro** e clique em **Encerrar dia**
 no topo do painel. O primeiro clique já consulta

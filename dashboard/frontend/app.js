@@ -135,7 +135,6 @@ const el = {
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
   diagnosticOpen: document.getElementById('diagnostic-open'),
-  lineConnection: document.getElementById('line-connection'),
   diagnosticModal: document.getElementById('diagnostic-modal'),
   diagnosticClose: document.getElementById('diagnostic-close'),
   diagnosticDismiss: document.getElementById('diagnostic-dismiss'),
@@ -1024,46 +1023,11 @@ function beginShutdownProgress() {
 }
 
 function renderLineConnection(connection) {
+  // O estado da linha é mostrado pelo card Operação; a topbar mantém apenas
+  // os controles, sem repetir o mesmo indicador ao lado de "Encerrar dia".
   state.lineConnection = connection ?? null;
   renderOperation();
   updateMonitoringStages();
-
-  const badge = el.lineConnection;
-  badge.classList.remove('line-online', 'line-stopped', 'line-offline', 'line-unknown');
-
-  if (!connection || connection.state === 'unknown') {
-    badge.textContent = 'Linha: —';
-    badge.title = 'Aguardando heartbeat do gateway';
-    badge.classList.add('line-unknown');
-    return;
-  }
-
-  const reportedAt = connection.lastReadAt
-    ? new Date(connection.lastReadAt).toLocaleTimeString('pt-BR')
-    : null;
-
-  if (connection.state === 'offline') {
-    badge.textContent = 'Linha: sem comunicação';
-    badge.title = connection.error
-      ? `Falha: ${connection.error}`
-      : 'Gateway sem heartbeat; CLP pode estar desligado';
-    badge.classList.add('line-offline');
-    return;
-  }
-
-  if (connection.running === true) {
-    badge.textContent = 'Linha: operando';
-    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
-    badge.classList.add('line-online');
-  } else if (connection.running === false) {
-    badge.textContent = 'Linha: parada';
-    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
-    badge.classList.add('line-stopped');
-  } else {
-    badge.textContent = 'Linha: conectada';
-    badge.title = 'CLP respondeu, mas o estado de operação é desconhecido';
-    badge.classList.add('line-unknown');
-  }
 }
 
 async function refreshLineConnection() {
