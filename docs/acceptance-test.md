@@ -1,4 +1,12 @@
-# Teste de Aceitação — MVP v0.1.0
+# Teste de Aceitação — MVP v0.1.0 (documento histórico)
+
+> **Atenção:** este roteiro registra a aceitação do MVP `v0.1.0`. Algumas
+> expectativas refletem a interface daquela versão (por exemplo, o selo
+> `Tempo real`/`Polling` e as contagens de testes), removidas ou alteradas
+> depois pelas ADR-020, ADR-027 e pela auditoria de 2026-11. Para o estado
+> atual, veja [`audit-refactor-2026-11.md`](audit-refactor-2026-11.md) e o
+> [README](../README.md). Não renumerar os casos abaixo: eles são a prova do
+> kit entregue naquela data.
 
 **Versão avaliada:** `v0.1.0-mvp` (commit de referência no rodapé do documento)  
 **Escopo:** validar o MVP acadêmico da Plataforma Industrial 4.0 com dados
@@ -206,8 +214,9 @@ Invoke-RestMethod http://localhost:3000/api/integrations/sap/outbox?limit=20
 
 **Esperado:** eventos `maintenance_order.created`, `maintenance_order.sent` e
 `maintenance_order.cancelled` (conforme as ações executadas em AT-06), com
-`external_id` no formato `SAP-<id>-<sufixo>`, status `sent` e payload com os
-dados da OS.
+`external_id` igual ao número de controle do componente — 7 dígitos, sem
+prefixo: `1001011` rolamento, `1001012` motor, `1001013` válvula de envase e
+`1001014` válvula de tampagem —, status `sent` e payload com os dados da OS.
 
 ### AT-08 — Gateway no modo simulador
 

@@ -29,7 +29,20 @@ function criarElemento() {
     getAttribute() { return null; },
     focus() {},
     querySelector() { return criarElemento(); },
-    getContext() { return {}; },
+    getContext() {
+      return {
+        setTransform() {},
+        clearRect() {},
+        beginPath() {},
+        moveTo() {},
+        lineTo() {},
+        stroke() {},
+        closePath() {},
+        fill() {},
+        fillText() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+      };
+    },
     add() {},
   };
 }
@@ -96,13 +109,41 @@ function carregarApp(opcoes = {}) {
       '  renderOperation();' +
       '  return { texto: el.running.textContent, cor: el.running.style.color };' +
       '};' +
+      '\nglobalThis.__etapasProntas = () => {' +
+      '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
+      '  renderBoot();' +
+      '};' +
+      '\nglobalThis.__bootProgresso = (reveladas, decorridoMs) => {' +
+      '  state.boot.revealed = reveladas;' +
+      '  state.boot.startedAt = Date.now() - decorridoMs;' +
+      '  renderBoot();' +
+      '  return { percent: el.bootPercent.textContent, hidden: el.bootScreen.hidden, hint: el.bootHint.textContent };' +
+      '};' +
       '\nglobalThis.__pronto = () => {' +
       '  state.monitoring.stages.forEach((s) => { s.status = "done"; });' +
+      '  state.boot.revealed = state.monitoring.stages.length;' +
+      '  state.boot.startedAt = Date.now() - 60000;' +
       '  renderBoot();' +
       '};' +
       '\nglobalThis.__statusSistema = (status) => renderShutdown(status);' +
       '\nglobalThis.__maquina = (id) => { state.machineId = id; };' +
-      '\nglobalThis.__estadoLinha = () => state.shutdown.lineState;',
+      '\nglobalThis.__estadoLinha = () => state.shutdown.lineState;' +
+      '\nglobalThis.__verificarApi = async (saudavel) => {' +
+      '  state.monitoring.enabled = false;' +
+      '  await startMonitoring();' +
+      '  const api = state.monitoring.stages.find((s) => s.id === "api");' +
+      '  return { status: api.status, detalhe: api.detail };' +
+      '};' +
+      '\nglobalThis.__eventoDetalhe = (detalhe) => {' +
+      '  addMonitoringEvent("Teste", detalhe, "error");' +
+      '  return el.monitoringEvents.innerHTML;' +
+      '};' +
+      '\nglobalThis.__trocarMaquina = (maquinas, id) => {' +
+      '  state.machines = maquinas;' +
+      '  el.machineSelect.value = String(id);' +
+      '  el.machineSelect.dispatch("change");' +
+      '  return { preenchidos: el.filled.textContent, resumo: el.chartSummary.textContent };' +
+      '};',
     contexto
   );
 
@@ -164,6 +205,17 @@ test('dashboard não exibe o badge redundante "Tempo real"', () => {
   assert.doesNotMatch(js, /Tempo real/);
 });
 
+test('Topbar não repete o status da linha ao lado de Encerrar dia', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf8');
+  const js = fs.readFileSync(APP_PATH, 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+
+  assert.doesNotMatch(html, /id="line-connection"/);
+  assert.doesNotMatch(js, /el\.lineConnection/);
+  assert.match(js, /card Operação/);
+  assert.doesNotMatch(css, /\.badge\.line-/);
+});
+
 test('Atualizar abre popup centralizado quando o monitoramento está desligado', () => {
   const { obter } = carregarApp();
   const modal = obter('warning-modal');
@@ -196,6 +248,33 @@ test('Tela de inicialização aparece no primeiro acesso e abre o painel automat
 
   contexto.__pronto();
   assert.equal(obter('boot-screen').hidden, true);
+  assert.equal(armazenamento.valor, chaveHoje());
+});
+
+test('Abertura revela as etapas gradualmente e entra só depois do tempo mínimo', () => {
+  const armazenamento = {
+    valor: null,
+    getItem() { return this.valor; },
+    setItem(chave, valor) { this.valor = valor; },
+  };
+  const { contexto, obter } = carregarApp({ localStorage: armazenamento });
+
+  contexto.__etapasProntas();
+  let resultado = contexto.__bootProgresso(2, 2500);
+  assert.equal(resultado.percent, '33%');
+  assert.equal(resultado.hidden, false);
+  assert.equal(obter('boot-enter').disabled, true);
+  assert.match(obter('boot-stages').innerHTML, /Aguardando verificação/);
+  assert.doesNotMatch(obter('boot-stages').innerHTML, /Acumulado de produção carregado/);
+
+  resultado = contexto.__bootProgresso(6, 5000);
+  assert.equal(resultado.percent, '100%');
+  assert.equal(resultado.hidden, false);
+  assert.match(resultado.hint, /Finalizando a abertura/);
+  assert.equal(obter('boot-enter').disabled, true);
+
+  resultado = contexto.__bootProgresso(6, 10000);
+  assert.equal(resultado.hidden, true);
   assert.equal(armazenamento.valor, chaveHoje());
 });
 
@@ -298,4 +377,84 @@ test('Falha no acionamento automático oferece o atalho manual', async () => {
   assert.equal(obter('shutdown-instruction').hidden, false);
   assert.equal(obter('shutdown-copy').hidden, false);
   assert.match(obter('shutdown-message').textContent, /ENCERRAR-PI40\.cmd/);
+});
+
+test('Estágio da API registra falha quando /health não responde', async () => {
+  const { contexto } = carregarApp({
+    fetch: async (url) => {
+      if (url === '/health') return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ machines: [] }) };
+    },
+  });
+
+  const resultado = await contexto.__verificarApi();
+
+  assert.equal(resultado.status, 'error');
+  assert.match(resultado.detalhe, /não foi possível consultar/i);
+});
+
+test('Estágio da API é concluído quando /health responde', async () => {
+  const { contexto } = carregarApp({
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ machines: [] }) }),
+  });
+
+  const resultado = await contexto.__verificarApi();
+
+  assert.equal(resultado.status, 'done');
+  assert.equal(resultado.detalhe, 'Backend respondeu com sucesso.');
+});
+
+test('Cliques repetidos não disparam duas ordens de parada', async () => {
+  let resolverConexao;
+  const chamadas = [];
+  const { contexto, obter } = carregarApp({
+    fetch: async (url) => {
+      chamadas.push(url);
+      if (url.includes('/connection')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => new Promise((resolve) => { resolverConexao = () => resolve({ state: 'offline' }); }),
+        };
+      }
+      return { ok: true, status: 202, json: async () => ({}) };
+    },
+  });
+  obter('shutdown-modal').hidden = true;
+  contexto.__maquina('Linha-01');
+
+  obter('shutdown-open').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(resolverConexao, `Conexão não consultada: ${chamadas.join(', ')}`);
+  obter('shutdown-confirm').dispatch('click');
+  resolverConexao();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(chamadas.filter((url) => url === '/api/system/stop').length, 1);
+});
+
+test('Detalhes externos são escapados antes de entrar no HTML', () => {
+  const { contexto } = carregarApp();
+  const html = contexto.__eventoDetalhe('<img src=x onerror=1>');
+
+  assert.match(html, /&lt;img/);
+  assert.doesNotMatch(html, /<img/);
+});
+
+test('Troca de máquina limpa os dados anteriores antes de recarregar', () => {
+  const { contexto, obter } = carregarApp({
+    fetch: async (url) => {
+      if (url === '/api/machines') {
+        return { ok: true, status: 200, json: async () => ({ machines: [{ id: 7, code: 'Linha-02', name: 'Linha 02' }] }) };
+      }
+      return { ok: false, status: 503, json: async () => ({}) };
+    },
+  });
+  obter('prod-filled').textContent = '999';
+  obter('chart-summary').textContent = 'dados antigos';
+
+  const resultado = contexto.__trocarMaquina([{ id: 7, code: 'Linha-02', name: 'Linha 02' }], 7);
+
+  assert.equal(resultado.preenchidos, '0');
+  assert.equal(resultado.resumo, '—');
 });

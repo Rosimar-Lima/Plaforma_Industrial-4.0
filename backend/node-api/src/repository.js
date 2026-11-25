@@ -15,6 +15,7 @@ const {
   componentStatus,
   maintenanceAlert,
   componentView,
+  sapControlNumberFor,
 } = require('./maintenance');
 
 // node-postgres devolve BIGINT como string. A API expõe inteiros (OpenAPI) e o
@@ -179,8 +180,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return Number(result.rows[0]?.cycles ?? component.initial);
   }
 
-  async function syncMaintenanceAlert(client, machineId, component, usage, timestamp) {
-    const condition = maintenanceAlert(component, usage);
+  async function syncMaintenanceAlert(client, machineId, component, usage, timestamp, warnRatio) {
+    const condition = maintenanceAlert(component, usage, warnRatio);
     if (!condition) return null;
 
     const existing = await client.query(
@@ -223,7 +224,11 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       [order.id]
     );
 
-    const externalId = `SAP-${order.id}-${Date.now().toString(36).toUpperCase()}`;
+    const externalId = component.sapControlNumber ?? sapControlNumberFor(order.component_code);
+    if (!externalId) {
+      throw new Error(`Componente ${order.component_code} sem número de controle SAP.`);
+    }
+
     const payload = {
       event: eventType,
       sapOrderId: externalId,
@@ -240,6 +245,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       component: {
         code: component.code,
         name: component.name,
+        sapControlNumber: externalId,
         metric: component.metric,
         mtbf: component.mtbf,
         unit: component.unit,
@@ -346,7 +352,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           machineId,
           component,
           usage,
-          record.timestamp
+          record.timestamp,
+          maintenance.warnRatio
         );
         if (alertEvent) result.alerts.push(alertEvent);
 
@@ -415,6 +422,7 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
       ) ?? {
         code: order.component_code,
         name: order.component_code,
+        sapControlNumber: sapControlNumberFor(order.component_code),
         metric: 'cycles',
         mtbf: 0,
         unit: 'ciclos',

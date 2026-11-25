@@ -127,6 +127,30 @@ test('agente aciona Stop uma vez e ignora repetição do mesmo pedido', async ()
   }
 });
 
+test('processo encerrado por sinal libera o agente para nova ação', async () => {
+  const chamadas = [];
+  const child = { exitCode: null, signalCode: null, killed: false };
+  const { agent, dir, commandPath } = criarAgente((action) => {
+    chamadas.push(action);
+    return child;
+  });
+  try {
+    escrever(commandPath);
+    await agent.checkCommand();
+    assert.equal(agent.isBusy(), true);
+
+    child.signalCode = 'SIGTERM';
+    assert.equal(agent.isBusy(), false);
+
+    escrever(commandPath, { action: 'start', nonce: 'novo-pedido' });
+    await agent.checkCommand();
+    assert.deepEqual(chamadas, ['Stop', 'Start']);
+  } finally {
+    agent.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('pedido fica pendente enquanto o script anterior está rodando', async () => {
   const chamadas = [];
   const { agent, dir, commandPath } = criarAgente((action) => {

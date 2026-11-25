@@ -8,6 +8,30 @@ const COUNTER_SOURCES = Object.freeze(['filled', 'capped', 'total']);
 const HOUR_SOURCES = Object.freeze(['conveyor', 'running']);
 const MAX_HOURS_PER_SAMPLE = 1;
 
+// Número de controle SAP de cada componente cadastrado. É fixo por componente:
+// a válvula de envase não compartilha o número da válvula de tampagem.
+const DEFAULT_SAP_CONTROL_NUMBERS = Object.freeze({
+  'conveyor-bearing': '1001011',
+  'conveyor-motor': '1001012',
+  'fill-valve': '1001013',
+  'cap-valve': '1001014',
+});
+
+function normalizeSapControlNumber(raw, code) {
+  if (typeof raw === 'number' && Number.isInteger(raw)) raw = String(raw);
+  const value = typeof raw === 'string' ? raw.trim() : '';
+
+  if (!/^\d{7}$/.test(value) || Number(value) <= 100) {
+    return sapControlNumberFor(code);
+  }
+
+  return value;
+}
+
+function sapControlNumberFor(code) {
+  return DEFAULT_SAP_CONTROL_NUMBERS[code] ?? null;
+}
+
 function toRatio(value, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -47,6 +71,7 @@ function normalizeComponent(raw) {
   return {
     code: code.slice(0, 50),
     name: name.slice(0, 120),
+    sapControlNumber: normalizeSapControlNumber(raw.sapControlNumber, code),
     kind: typeof raw.kind === 'string' && raw.kind.trim() ? raw.kind.trim() : 'component',
     metric,
     source,
@@ -137,9 +162,9 @@ function componentStatus(usage, component, warnRatio = DEFAULT_WARN_RATIO) {
   return 'ok';
 }
 
-function maintenanceAlert(component, usage) {
+function maintenanceAlert(component, usage, warnRatio = DEFAULT_WARN_RATIO) {
   const ratio = usageRatio(usage, component);
-  const status = componentStatus(usage, component);
+  const status = componentStatus(usage, component, warnRatio);
 
   if (status === 'ok') return null;
 
@@ -164,6 +189,7 @@ function componentView(component, usage, warnRatio = DEFAULT_WARN_RATIO) {
   return {
     code: component.code,
     name: component.name,
+    sapControlNumber: component.sapControlNumber ?? null,
     kind: component.kind,
     metric: component.metric,
     source: component.source,
@@ -185,6 +211,8 @@ module.exports = {
   normalizeComponent,
   normalizePart,
   loadMaintenanceConfig,
+  normalizeSapControlNumber,
+  sapControlNumberFor,
   counterValue,
   usageSignal,
   hourDelta,

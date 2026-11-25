@@ -18,6 +18,9 @@ function createAdapter(config) {
         machineId: config.machineId,
         plcVersion: config.plcVersion || 'gateway-sim',
         autoStart: config.simulator.autoStart,
+        // Um tick não pode avançar mais que um intervalo de polling: a primeira
+        // leitura pode acontecer muito depois da criação do adaptador.
+        maxTickMs: config.pollMs,
       });
     default:
       throw new Error(`Protocolo não suportado: ${config.protocol}`);

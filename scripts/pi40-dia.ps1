@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Start', 'Stop', 'Status')]
     [string]$Action = 'Status'
@@ -36,13 +36,15 @@ function Ensure-Administrator {
     if (Test-Administrator) { return }
 
     # Os atalhos .cmd chamam este script sem elevação; o UAC aparece aqui.
-    Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @(
+    # -Wait/-PassThru evita que o atalho manual reporte sucesso antes de o
+    # processo elevado terminar (ou antes de o operador responder ao UAC).
+    $elevated = Start-Process -FilePath 'powershell.exe' -Verb RunAs -PassThru -Wait -ArgumentList @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', ('"' + $PSCommandPath + '"'),
         '-Action', $Action
     )
-    exit 0
+    exit $elevated.ExitCode
 }
 
 function Write-Status {
@@ -107,6 +109,14 @@ function Invoke-Docker {
     finally {
         Pop-Location
     }
+}
+
+function Get-ComposeRunningServices {
+    # Usa Invoke-Docker para garantir o diretório do Compose e a checagem do
+    # LASTEXITCODE, mesmo quando o script é chamado por caminho absoluto.
+    return ((Invoke-Docker -DockerArguments @(
+        'compose', 'ps', '--status', 'running', '--services'
+    )) | Out-String).Trim()
 }
 
 function Test-HttpOk {
@@ -186,12 +196,12 @@ switch ($Action) {
             $current = 'persistence'
             Set-Step $current 'active' 'Consultando o banco...'
             Start-Sleep -Seconds 2
-            $servicosAtivos = ((& (Get-DockerCommand) compose ps --status running --services) | Out-String)
+            $servicosAtivos = Get-ComposeRunningServices
             if ($servicosAtivos -match 'postgres') {
+                # As credenciais vêm do próprio container, não de literal no script.
                 $samples = ((Invoke-Docker -DockerArguments @(
-                    'compose', 'exec', '-T', 'postgres', 'psql',
-                    '-U', 'industrial', '-d', 'industrial', '-tAc',
-                    'SELECT count(*) FROM telemetry;'
+                    'compose', 'exec', '-T', 'postgres', 'sh', '-c',
+                    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT count(*) FROM telemetry;"'
                 )) | Out-String).Trim()
                 Set-Step $current 'done' "$samples amostras persistidas no PostgreSQL."
             }
@@ -203,7 +213,7 @@ switch ($Action) {
             $current = 'containers'
             Set-Step $current 'active' 'Parando backend, PostgreSQL e simulador...'
             Invoke-Docker -DockerArguments @('compose', 'stop')
-            $running = ((& (Get-DockerCommand) compose ps --status running --services) | Out-String).Trim()
+            $running = Get-ComposeRunningServices
             if ($running) {
                 throw "Containers ainda ativos: $running"
             }

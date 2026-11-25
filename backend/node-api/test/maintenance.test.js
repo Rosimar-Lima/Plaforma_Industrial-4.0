@@ -19,6 +19,7 @@ const {
 const valve = {
   code: 'fill-valve',
   name: 'Válvula de envase',
+  sapControlNumber: '1001013',
   kind: 'valve',
   metric: 'cycles',
   source: 'filled',
@@ -31,6 +32,7 @@ const valve = {
 const bearing = {
   code: 'conveyor-bearing',
   name: 'Rolamento da esteira',
+  sapControlNumber: '1001011',
   kind: 'bearing',
   metric: 'hours',
   source: 'conveyor',
@@ -56,6 +58,44 @@ test('normaliza configuração e descarta componentes inválidos', () => {
   assert.equal(config.components[0].metric, 'cycles');
   assert.equal(config.components[0].unit, 'ciclos');
   assert.equal(config.components[0].parts.length, 0);
+});
+
+test('cada componente recebe um número de controle SAP fixo de 7 dígitos', () => {
+  const config = normalizeConfig({
+    components: [
+      {
+        code: 'fill-valve',
+        name: 'Válvula de envase',
+        sapControlNumber: '1001013',
+        metric: 'cycles',
+        mtbfCycles: 400,
+      },
+      {
+        code: 'cap-valve',
+        name: 'Válvula de tampagem',
+        sapControlNumber: 1001014,
+        metric: 'cycles',
+        mtbfCycles: 350,
+      },
+      {
+        code: 'conveyor-bearing',
+        name: 'Rolamento sem número informado',
+        metric: 'hours',
+        mtbfHours: 200,
+      },
+      {
+        code: 'desconhecido',
+        name: 'Sem número cadastrado',
+        metric: 'cycles',
+        mtbfCycles: 100,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    config.components.map((component) => component.sapControlNumber),
+    ['1001013', '1001014', '1001011', null]
+  );
 });
 
 test('limita warnRatio e usa padrão quando inválido', () => {
@@ -235,6 +275,14 @@ test('gera alerta de vida útil apenas a partir da atenção', () => {
   assert.match(critical.message, /esgotada/);
 });
 
+test('usa warnRatio configurado ao gerar alerta de manutenção', () => {
+  assert.equal(maintenanceAlert(valve, 340, 0.9), null);
+
+  const warning = maintenanceAlert(valve, 340, 0.7);
+  assert.equal(warning.severity, 'warning');
+  assert.match(warning.message, /85%/);
+});
+
 test('alerta de componente de horas usa horas na mensagem', () => {
   const warning = maintenanceAlert(bearing, 170);
 
@@ -248,6 +296,7 @@ test('monta visão do componente com razão e uso restante', () => {
 
   assert.equal(view.usageRatio, 0.875);
   assert.equal(view.remaining, 50);
+  assert.equal(view.sapControlNumber, '1001013');
   assert.equal(view.unit, 'ciclos');
   assert.equal(view.metric, 'cycles');
   assert.equal(view.status, 'warning');
