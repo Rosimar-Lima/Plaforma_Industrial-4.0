@@ -162,9 +162,9 @@ function componentStatus(usage, component, warnRatio = DEFAULT_WARN_RATIO) {
   return 'ok';
 }
 
-function maintenanceAlert(component, usage) {
+function maintenanceAlert(component, usage, warnRatio = DEFAULT_WARN_RATIO) {
   const ratio = usageRatio(usage, component);
-  const status = componentStatus(usage, component);
+  const status = componentStatus(usage, component, warnRatio);
 
   if (status === 'ok') return null;
 

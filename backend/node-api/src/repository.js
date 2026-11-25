@@ -180,8 +180,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
     return Number(result.rows[0]?.cycles ?? component.initial);
   }
 
-  async function syncMaintenanceAlert(client, machineId, component, usage, timestamp) {
-    const condition = maintenanceAlert(component, usage);
+  async function syncMaintenanceAlert(client, machineId, component, usage, timestamp, warnRatio) {
+    const condition = maintenanceAlert(component, usage, warnRatio);
     if (!condition) return null;
 
     const existing = await client.query(
@@ -352,7 +352,8 @@ function createRepository(pool, { alertSettings, maintenanceConfig } = {}) {
           machineId,
           component,
           usage,
-          record.timestamp
+          record.timestamp,
+          maintenance.warnRatio
         );
         if (alertEvent) result.alerts.push(alertEvent);
 

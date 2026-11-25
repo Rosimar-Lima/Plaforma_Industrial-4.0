@@ -32,12 +32,18 @@ O projeto foi concebido para funcionar tanto com equipamentos reais quanto com s
 | [gateway/README.md](gateway/README.md) | Gateway industrial (ADS, OPC-UA, Modbus TCP). |
 | [docs/](docs/) | Requisitos, indicadores, casos de uso e glossário. |
 
-## Começando
+## Começando (modo desenvolvimento / MVP)
 
 ```bash
 cp .env.example .env
 docker compose up -d
 ```
+
+> **Atenção:** `docker compose up -d` também inicia o simulador
+> (`AUTO_START=true`, máquina `Linha-01`). Use este modo apenas para
+> desenvolvimento e aceitação. Na operação diária com o gateway ADS real, o
+> simulador deve ficar parado: o caminho é `INICIAR-PI40.cmd` / `pi40-dia.ps1
+> -Action Start`, descrito abaixo.
 
 Dashboard: `http://localhost:3000` (servido pelo backend). A telemetria chega em
 tempo real por SSE (`/api/stream`), com fallback para polling. Para rodar sem

@@ -1,4 +1,12 @@
-# Teste de Aceitação — MVP v0.1.0
+# Teste de Aceitação — MVP v0.1.0 (documento histórico)
+
+> **Atenção:** este roteiro registra a aceitação do MVP `v0.1.0`. Algumas
+> expectativas refletem a interface daquela versão (por exemplo, o selo
+> `Tempo real`/`Polling` e as contagens de testes), removidas ou alteradas
+> depois pelas ADR-020, ADR-027 e pela auditoria de 2026-11. Para o estado
+> atual, veja [`audit-refactor-2026-11.md`](audit-refactor-2026-11.md) e o
+> [README](../README.md). Não renumerar os casos abaixo: eles são a prova do
+> kit entregue naquela data.
 
 **Versão avaliada:** `v0.1.0-mvp` (commit de referência no rodapé do documento)  
 **Escopo:** validar o MVP acadêmico da Plataforma Industrial 4.0 com dados

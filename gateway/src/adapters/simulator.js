@@ -10,9 +10,11 @@ function createSimulatorAdapter({
   machineId = 'Linha-01',
   plcVersion = 'gateway-sim',
   autoStart = true,
+  maxTickMs = 1000,
+  now = () => Date.now(),
 } = {}) {
   const state = createLineState({ plcVersion });
-  let lastTick = Date.now();
+  let lastTick = now();
 
   if (autoStart) {
     tick(state, 0, { start: true });
@@ -21,13 +23,13 @@ function createSimulatorAdapter({
   async function connect() {}
 
   async function readTags() {
-    const now = Date.now();
-    tick(state, Math.max(0, now - lastTick));
-    lastTick = now;
+    const current = now();
+    tick(state, Math.min(maxTickMs, Math.max(0, current - lastTick)));
+    lastTick = current;
 
     const telemetry = toTelemetry(state, {
       machineId,
-      timestamp: new Date(now).toISOString(),
+      timestamp: new Date(current).toISOString(),
     });
 
     return {

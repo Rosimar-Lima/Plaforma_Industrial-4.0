@@ -62,6 +62,52 @@ test('publica telemetria a cada leitura', async () => {
   assert.equal(published[0].line.bottlePositioned, true);
 });
 
+test('heartbeat e telemetria interpretam running da mesma forma', async () => {
+  const statuses = [];
+  const published = [];
+  const gateway = createGateway({
+    adapter: {
+      async connect() {},
+      async readTags() {
+        return { ...validValues(), running: 1 };
+      },
+      async close() {},
+    },
+    publisher: {
+      async publish(payload) {
+        published.push(payload);
+      },
+      async publishStatus(status) {
+        statuses.push(status);
+      },
+    },
+    machineId: 'Linha-01',
+    logger: silentLogger(),
+  });
+
+  await gateway.pollOnce();
+
+  assert.equal(statuses[0].running, true);
+  assert.equal(published[0].line.running, true);
+
+  const semRunning = createGateway({
+    adapter: {
+      async connect() {},
+      async readTags() {
+        const { running, ...values } = validValues();
+        return values;
+      },
+      async close() {},
+    },
+    publisher: { async publish() {}, async publishStatus(status) { statuses.push(status); } },
+    machineId: 'Linha-01',
+    logger: silentLogger(),
+  });
+
+  await semRunning.pollOnce();
+  assert.equal(statuses[1].running, null);
+});
+
 test('reconecta após falha de conexão', async () => {
   const published = [];
   const errors = [];

@@ -9,6 +9,14 @@ function toBoolean(value) {
   return false;
 }
 
+// Heartbeat e telemetria precisam concordar: valores do CLP podem chegar como
+// 0/1 ou 'true'/'false', e 'running' só é desconhecido quando a leitura não traz
+// o campo (ou traz null).
+function normalizeRunning(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return toBoolean(value);
+}
+
 function toInteger(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -52,7 +60,7 @@ function buildTelemetry({ machineId, values, plcVersion = null, timestamp } = {}
 
   const fillPercent = clampFillPercent(values.fillPercent);
   const evOn = toBoolean(values.evOn);
-  const running = toBoolean(values.running);
+  const running = normalizeRunning(values.running) ?? false;
 
   const explicitStep = Number(values.step);
   const step =
@@ -90,6 +98,7 @@ function buildTelemetry({ machineId, values, plcVersion = null, timestamp } = {}
 
 module.exports = {
   toBoolean,
+  normalizeRunning,
   toInteger,
   clampFillPercent,
   deriveStep,

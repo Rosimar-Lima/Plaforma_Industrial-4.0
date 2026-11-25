@@ -225,6 +225,18 @@ function createFakeRepository() {
   };
 }
 
+function createFakeStreamHub() {
+  const broadcasts = [];
+  return {
+    broadcasts,
+    subscribe() {},
+    broadcast(event, data) {
+      broadcasts.push({ event, data });
+    },
+    closeAll() {},
+  };
+}
+
 async function startApp(repository, options = {}) {
   const app = createApp({ repository, ...options });
   const server = await new Promise((resolve) => {
@@ -295,6 +307,23 @@ test('POST /api/telemetry rejeita JSON malformado', async () => {
     assert.equal(response.status, 400);
     const body = await response.json();
     assert.equal(body.error, 'invalid_request');
+  } finally {
+    await app.close();
+  }
+});
+
+test('falha do repositório retorna 500 internal_error', async () => {
+  const repository = createFakeRepository();
+  repository.listMachines = async () => {
+    throw new Error('banco indisponível');
+  };
+  const app = await startApp(repository);
+
+  try {
+    const response = await fetch(`${app.baseUrl}/api/machines`);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'internal_error');
   } finally {
     await app.close();
   }
@@ -407,14 +436,8 @@ test('GET /api/machines/:id/oee retorna os indicadores', async () => {
 });
 
 test('POST /api/telemetry publica a amostra no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const app = await startApp(createFakeRepository(), { streamHub });
 
   try {
@@ -435,14 +458,8 @@ test('POST /api/telemetry publica a amostra no stream', async () => {
 });
 
 test('POST /api/telemetry publica alertas no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const repository = createFakeRepository();
   repository.ingestTelemetry = async (record) => ({
     machineId: 1,
@@ -521,14 +538,8 @@ test('GET /api/machines/:id/alerts valida id, status e limite', async () => {
 });
 
 test('POST /api/alerts/:id/resolve resolve e publica no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const repository = createFakeRepository();
   const app = await startApp(repository, { streamHub });
 
@@ -650,14 +661,8 @@ test('GET /api/machines/:id/maintenance valida o id', async () => {
 });
 
 test('POST /api/maintenance/orders/:id/send envia OS para manutenção', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const app = await startApp(createFakeRepository(), { streamHub });
 
   try {
@@ -686,14 +691,8 @@ test('POST /api/maintenance/orders/:id/send envia OS para manutenção', async (
 });
 
 test('POST /api/maintenance/orders/:id/cancel cancela a OS', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const app = await startApp(createFakeRepository(), { streamHub });
 
   try {
@@ -716,14 +715,8 @@ test('POST /api/maintenance/orders/:id/cancel cancela a OS', async () => {
 });
 
 test('POST /api/maintenance/orders/:id/complete conclui e publica no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const app = await startApp(createFakeRepository(), { streamHub });
 
   try {
@@ -771,14 +764,8 @@ test('GET /api/integrations/sap/outbox lista envios ao SAP', async () => {
 });
 
 test('POST /api/telemetry publica eventos de manutenção no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const repository = createFakeRepository();
   repository.ingestTelemetry = async (record) => ({
     machineId: 1,
@@ -962,14 +949,8 @@ test('GET /api/machines/:id/production/total devolve o acumulado do banco', asyn
 });
 
 test('POST /api/telemetry publica reset do acumulado no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const repository = createFakeRepository();
   repository.ingestTelemetry = async (record) => ({
     machineId: record.machineId,
@@ -1095,14 +1076,8 @@ test('GET /api/machines/:id/connection valida id', async () => {
 });
 
 test('POST /api/gateway/status publica eventos de perda e restabelecimento no stream', async () => {
-  const broadcasts = [];
-  const streamHub = {
-    subscribe() {},
-    broadcast(event, data) {
-      broadcasts.push({ event, data });
-    },
-    closeAll() {},
-  };
+  const streamHub = createFakeStreamHub();
+  const broadcasts = streamHub.broadcasts;
   const app = await startApp(createFakeRepository(), { streamHub, gatewayStaleMs: 60000 });
 
   async function sendStatus(overrides) {

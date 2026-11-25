@@ -1201,16 +1201,6 @@ button:hover {
   line-height: 1.5;
 }
 
-.shutdown-line-state label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
 .shutdown-headline {
   display: flex;
   align-items: center;
@@ -1220,6 +1210,8 @@ button:hover {
 
 .shutdown-steps {
   margin-top: 0;
+  padding-left: 0;
+  list-style: none;
 }
 
 .shutdown-instruction {

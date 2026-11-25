@@ -1056,3 +1056,148 @@ configuração e exclusivo de cada componente cadastrado.
 - Nenhum comando é enviado ao CLP e o acumulado de produção não é alterado.
 
 ---
+
+# ADR-030 - Diagnóstico real e segurança de interface no dashboard
+
+**Status:** Aceita
+
+**Contexto:**
+
+A auditoria de 2026-11 encontrou quatro defeitos no `app.js`: o estágio `api`
+era marcado como `done` somente porque o monitoramento estava ligado, mesmo
+quando `/health` falhava; dois cliques rápidos podiam enviar duas ordens de
+parada; `innerHTML` recebia títulos e detalhes sem escapar; e a troca de máquina
+podia exibir contadores da máquina anterior se a recarga falhasse.
+
+**Decisão:**
+
+- `monitoring.apiHealthy` passa a ser `null` (aguardando), `true` (sucesso) ou
+  `false` (falha) e é a única fonte do estágio `api` em `renderMonitoring()` e
+  `startMonitoring()`.
+- `shutdown.verifying` impede verificações e acionamentos concorrentes; o guard
+  é liberado no `finally` e reiniciado em `startShutdown()`/`closeShutdownModal()`.
+- `escapeHtml()` é aplicado a eventos e etapas antes de montar `innerHTML`.
+- `renderMachinePlaceholder()` centraliza a limpeza de indicadores, alertas,
+  manutenção, produção, gráfico e linha na troca de máquina.
+- Constantes compartilhadas (`STAGE_STATE_LABELS`, `MONITORING_MODE_CONFIG`,
+  `SHUTDOWN_STATE_PILLS`) e `setProgress()` substituem mapas e escritas
+  repetidas; `bindModalClose()` unifica os fechamentos de modal.
+
+**Consequências:**
+
+- Falha de API aparece como `falha` no diagnóstico e o texto do erro é exibido
+  com segurança.
+- O botão **Encerrar dia** continua verificando `/api/machines/:id/connection`
+  antes de agir; a regra `state=offline` não foi relaxada.
+- Testes do dashboard: 17/17 (antes: 12/12).
+
+---
+
+# ADR-031 - Alertas de manutenção e erros de API consistentes
+
+**Status:** Aceita
+
+**Contexto:**
+
+`maintenanceAlert()` chamava `componentStatus()` sem o `warnRatio` configurado,
+enquanto `syncMaintenanceSync` usava o valor da configuração. Com `warnRatio`
+customizado, a interface podia mostrar `warning` e nenhum alerta ser gerado.
+Além disso, cada rota repetia validação de id/período e `try/catch`, e não havia
+teste para erro do repositório retornando `500`.
+
+**Decisão:**
+
+- `maintenanceAlert(component, usage, warnRatio)` recebe e aplica o mesmo limite
+  usado por `componentStatus()`; `syncMaintenanceAlert()` repassa
+  `maintenance.warnRatio`.
+- `parsePositiveId()` centraliza a validação de ids; `registerOrderAction()`
+  substitui as três rotas de OS preservando os eventos `sent`, `cancelled` e
+  `completed` (o sufixo da URL não é o nome do evento).
+- Os `try/catch` repetidos das rotas assíncronas foram removidos: o projeto já
+  usa Express 5, que encaminha rejeições ao middleware de erro. O teste de
+  falha do repositório garante `500 internal_error`.
+- O fake `streamHub` dos testes foi extraído para `createFakeStreamHub()`.
+
+**Consequências:**
+
+- Alertas de manutenção respeitam `warnRatio` em toda a cadeia.
+- Rotas, status HTTP e eventos SSE permanecem os mesmos; apenas a
+  implementação e a cobertura de erro mudaram.
+- Testes do backend: 116/116 (antes: 114/114).
+
+---
+
+# ADR-032 - Consistência de estado e reconexão no gateway
+
+**Status:** Aceita
+
+**Contexto:**
+
+O heartbeat convertia `running` apenas quando já era booleano, enquanto a
+telemetria usava `toBoolean()`, então um CLP que devolvia `1` podia publicar
+`running: true` e heartbeat `running: null`. O agente de controle considerava
+"ocupado" um filho encerrado por sinal (`exitCode` permanece `null`). O
+adaptador ADS recarregava metadados apenas no `connect()` inicial e o
+simulador podia avançar vários segundos em um único tick quando a primeira
+leitura ocorria muito depois da criação.
+
+**Decisão:**
+
+- `normalizeRunning()` (em `mapping.js`) é usada por `buildTelemetry()` e pelo
+  heartbeat: ausência/`null` vira `null`; `0/1` e texto viram booleano.
+- `isBusy()` também verifica `signalCode`, liberando o agente após terminação
+  por sinal.
+- `cacheMetadata()` é chamada no `connect()` e no evento `reconnect` do cliente
+  ADS; falhas no recarregamento são registradas e não derrubam o gateway.
+- O adaptador simulador limita cada avanço a `maxTickMs`, informado com
+  `config.pollMs` pelo factory de adaptadores; `now()` pode ser injetado nos
+  testes.
+
+**Consequências:**
+
+- Heartbeat e telemetria descrevem o mesmo estado da linha, inclusive com
+  valores numéricos do ADS.
+- A reconexão automática da biblioteca ADS não deixa símbolos desatualizados;
+  `autoReconnect` continua desligado por padrão para evitar portas concorrentes.
+- Nenhum comando é escrito no CLP; a ponte de controle mantém token, `Origin`,
+  nonce e expiração de 60 s.
+- Testes do gateway: 50/50 (antes: 45/45).
+
+---
+
+# ADR-033 - Scripts operacionais legíveis e independentes do diretório atual
+
+**Status:** Aceita
+
+**Contexto:**
+
+Os `.ps1` eram UTF-8 sem BOM e rodavam sob Windows PowerShell 5.1, que os lê
+como ANSI — o artefato `system-status.json` continha `execuÃ§Ã£o`. Duas consultas
+`docker compose ps` não usavam `Push-Location` do `Invoke-Docker`, e a contagem
+de amostras fixava `-U industrial -d industrial` apesar de `.env` configurável.
+No caminho manual com UAC, o atalho saía com código `0` antes do filho elevado
+terminar.
+
+**Decisão:**
+
+- Os três `.ps1` versionados passam a ter BOM UTF-8, preservando CRLF; a saída
+  de `Write-Status` continua UTF-8 sem BOM porque é lida como JSON pelo backend.
+- `Get-ComposeRunningServices()` centraliza as duas consultas de serviços
+  ativos e sempre passa por `Invoke-Docker`.
+- A contagem de amostras usa `sh -c 'psql -U "$POSTGRES_USER" ...'` dentro do
+  container, sem credenciais literais no script.
+- `Ensure-Administrator` usa `Start-Process -Wait -PassThru` e propaga
+  `ExitCode`; a exceção para `LocalSystem` continua intacta para o serviço.
+- `docker compose stop`, a checagem de `offline` antes do Stop, a ordem das
+  etapas e a preservação do volume `postgres-data` não foram alteradas.
+
+**Consequências:**
+
+- `pi40-dia.ps1 -Action Status` foi validado sem efeito colateral e os três
+  scripts passam no parser do PowerShell 5.1.
+- Stop/Start reais não foram executados durante a refatoração: o host tem
+  telemetria real e o gateway ADS permanece somente leitura.
+- Detalhes não aplicados nesta rodada (OpenAPI, diagramas, ambiente de CI)
+  estão registrados em `docs/audit-refactor-2026-11.md`.
+
+---

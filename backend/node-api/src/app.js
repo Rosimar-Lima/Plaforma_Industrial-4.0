@@ -28,6 +28,15 @@ function parseDate(value) {
   return date.toISOString();
 }
 
+function parsePositiveId(value, errorCode, res) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < 1) {
+    res.status(400).json({ error: errorCode });
+    return null;
+  }
+  return id;
+}
+
 function createApp({
   repository,
   telemetryLimit = '100kb',
@@ -62,6 +71,26 @@ function createApp({
     streamHub.broadcast('connection', { machineId, action, connection });
   }
 
+  function registerOrderAction(pathAction, eventAction, repositoryMethod) {
+    app.post(`/api/maintenance/orders/:id/${pathAction}`, async (req, res) => {
+      const orderId = parsePositiveId(req.params.id, 'invalid_maintenance_order_id', res);
+      if (orderId === null) return;
+
+      const order = await repositoryMethod(orderId);
+      if (!order) {
+        res.status(404).json({ error: 'maintenance_order_not_found' });
+        return;
+      }
+
+      streamHub.broadcast('maintenance', {
+        machineId: order.machine_id,
+        action: eventAction,
+        order,
+      });
+      res.json({ order });
+    });
+  }
+
   const sweepTimer = setInterval(() => {
     for (const result of connectionTracker.sweep()) {
       publishConnection(result.machineId, 'lost', result.view);
@@ -73,7 +102,7 @@ function createApp({
     res.json({ status: 'ok' });
   });
 
-  app.post('/api/telemetry', async (req, res, next) => {
+  app.post('/api/telemetry', async (req, res) => {
     const result = validateTelemetry(req.body);
 
     if (!result.ok) {
@@ -81,47 +110,43 @@ function createApp({
       return;
     }
 
-    try {
-      const saved = await repository.ingestTelemetry(result.value);
-      streamHub.broadcast('telemetry', {
+    const saved = await repository.ingestTelemetry(result.value);
+    streamHub.broadcast('telemetry', {
+      machineId: result.value.machineId,
+      timestamp: result.value.timestamp,
+      plcVersion: result.value.plcVersion,
+      line: result.value.line,
+      production: result.value.production,
+    });
+    if (saved.productionTotal) {
+      streamHub.broadcast('production', {
         machineId: result.value.machineId,
-        timestamp: result.value.timestamp,
-        plcVersion: result.value.plcVersion,
-        line: result.value.line,
-        production: result.value.production,
+        action: saved.productionReset ? 'reset' : 'update',
+        totals: saved.productionTotal,
       });
-      if (saved.productionTotal) {
-        streamHub.broadcast('production', {
-          machineId: result.value.machineId,
-          action: saved.productionReset ? 'reset' : 'update',
-          totals: saved.productionTotal,
-        });
-      }
-      for (const event of saved.alerts ?? []) {
-        streamHub.broadcast('alert', {
-          machineId: result.value.machineId,
-          action: event.action,
-          alert: event.alert,
-        });
-      }
-      for (const event of saved.maintenance ?? []) {
-        streamHub.broadcast('maintenance', {
-          machineId: result.value.machineId,
-          action: event.action,
-          order: event.order,
-        });
-      }
-      res.status(202).json({
-        status: 'accepted',
-        machineId: result.value.machineId,
-        recordedAt: saved.recordedAt,
-      });
-    } catch (error) {
-      next(error);
     }
+    for (const event of saved.alerts ?? []) {
+      streamHub.broadcast('alert', {
+        machineId: result.value.machineId,
+        action: event.action,
+        alert: event.alert,
+      });
+    }
+    for (const event of saved.maintenance ?? []) {
+      streamHub.broadcast('maintenance', {
+        machineId: result.value.machineId,
+        action: event.action,
+        order: event.order,
+      });
+    }
+    res.status(202).json({
+      status: 'accepted',
+      machineId: result.value.machineId,
+      recordedAt: saved.recordedAt,
+    });
   });
 
-  app.post('/api/gateway/status', async (req, res, next) => {
+  app.post('/api/gateway/status', async (req, res) => {
     const result = validateGatewayStatus(req.body);
 
     if (!result.ok) {
@@ -129,54 +154,36 @@ function createApp({
       return;
     }
 
-    try {
-      const { view, events } = connectionTracker.update(
-        result.value.machineId,
-        result.value
-      );
-      publishConnection(result.value.machineId, 'update', view);
-      for (const event of events) {
-        publishConnection(result.value.machineId, event, view);
-      }
-      res.status(202).json({ status: 'accepted', connection: view });
-    } catch (error) {
-      next(error);
+    const { view, events } = connectionTracker.update(
+      result.value.machineId,
+      result.value
+    );
+    publishConnection(result.value.machineId, 'update', view);
+    for (const event of events) {
+      publishConnection(result.value.machineId, event, view);
     }
+    res.status(202).json({ status: 'accepted', connection: view });
   });
 
-  app.get('/api/machines', async (req, res, next) => {
-    try {
-      const machines = await repository.listMachines();
-      res.json({ machines });
-    } catch (error) {
-      next(error);
-    }
+  app.get('/api/machines', async (req, res) => {
+    const machines = await repository.listMachines();
+    res.json({ machines });
   });
 
-  app.get('/api/machines/:id/connection', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/connection', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
-    try {
-      // O gateway reporta o código (Linha-01), mas a URL usa o id numérico.
-      // Resolve o código para consultar o mesmo heartbeat usado no stream.
-      const machines = await repository.listMachines();
-      const machine = machines.find((item) => Number(item.id) === machineId);
-      res.json(connectionTracker.view(machine?.code ?? String(machineId)));
-    } catch (error) {
-      next(error);
-    }
+    // O gateway reporta o código (Linha-01), mas a URL usa o id numérico.
+    // Resolve o código para consultar o mesmo heartbeat usado no stream.
+    const machines = await repository.listMachines();
+    const machine = machines.find((item) => Number(item.id) === machineId);
+    res.json(connectionTracker.view(machine?.code ?? String(machineId)));
   });
 
-  app.get('/api/machines/:id/telemetry', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/telemetry', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);
@@ -191,20 +198,13 @@ function createApp({
       return;
     }
 
-    try {
-      const samples = await repository.listTelemetry(machineId, { from, to, limit });
-      res.json({ machineId, limit, samples });
-    } catch (error) {
-      next(error);
-    }
+    const samples = await repository.listTelemetry(machineId, { from, to, limit });
+    res.json({ machineId, limit, samples });
   });
 
-  app.get('/api/machines/:id/oee', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/oee', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);
@@ -223,39 +223,25 @@ function createApp({
       nominal = parsed;
     }
 
-    try {
-      const indicators = await repository.getOee(machineId, {
-        from,
-        to,
-        nominalCapacityPerHour: nominal,
-      });
-      res.json({ machineId, from, to, ...indicators });
-    } catch (error) {
-      next(error);
-    }
+    const indicators = await repository.getOee(machineId, {
+      from,
+      to,
+      nominalCapacityPerHour: nominal,
+    });
+    res.json({ machineId, from, to, ...indicators });
   });
 
-  app.get('/api/machines/:id/production/total', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/production/total', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
-    try {
-      const totals = await repository.getProductionTotal(machineId);
-      res.json(totals);
-    } catch (error) {
-      next(error);
-    }
+    const totals = await repository.getProductionTotal(machineId);
+    res.json(totals);
   });
 
-  app.get('/api/machines/:id/production', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/production', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
     const bucket = req.query.bucket ?? 'hour';
     if (!['hour', 'shift'].includes(bucket)) {
@@ -283,26 +269,19 @@ function createApp({
       return;
     }
 
-    try {
-      const history = await repository.getProductionHistory(machineId, {
-        from: new Date(fromMs).toISOString(),
-        to: new Date(toMs).toISOString(),
-        bucket,
-        ...productionSettings,
-        now: toMs,
-      });
-      res.json({ machineId, ...history });
-    } catch (error) {
-      next(error);
-    }
+    const history = await repository.getProductionHistory(machineId, {
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString(),
+      bucket,
+      ...productionSettings,
+      now: toMs,
+    });
+    res.json({ machineId, ...history });
   });
 
-  app.get('/api/machines/:id/alerts', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/alerts', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
     const status = req.query.status ?? 'open';
     if (!['open', 'all'].includes(status)) {
@@ -316,146 +295,50 @@ function createApp({
       return;
     }
 
-    try {
-      const alerts = await repository.listAlerts(machineId, { status, limit });
-      res.json({ machineId, status, limit, alerts });
-    } catch (error) {
-      next(error);
-    }
+    const alerts = await repository.listAlerts(machineId, { status, limit });
+    res.json({ machineId, status, limit, alerts });
   });
 
-  app.post('/api/alerts/:id/resolve', async (req, res, next) => {
-    const alertId = Number(req.params.id);
-    if (!Number.isInteger(alertId) || alertId < 1) {
-      res.status(400).json({ error: 'invalid_alert_id' });
+  app.post('/api/alerts/:id/resolve', async (req, res) => {
+    const alertId = parsePositiveId(req.params.id, 'invalid_alert_id', res);
+    if (alertId === null) return;
+
+    const alert = await repository.resolveAlert(alertId);
+    if (!alert) {
+      res.status(404).json({ error: 'alert_not_found' });
       return;
     }
 
-    try {
-      const alert = await repository.resolveAlert(alertId);
-      if (!alert) {
-        res.status(404).json({ error: 'alert_not_found' });
-        return;
-      }
+    streamHub.broadcast('alert', {
+      machineId: alert.machine_id,
+      action: 'resolved',
+      alert,
+    });
 
-      streamHub.broadcast('alert', {
-        machineId: alert.machine_id,
-        action: 'resolved',
-        alert,
-      });
-
-      res.json({ alert });
-    } catch (error) {
-      next(error);
-    }
+    res.json({ alert });
   });
 
-  app.get('/api/machines/:id/maintenance', async (req, res, next) => {
-    const machineId = Number(req.params.id);
-    if (!Number.isInteger(machineId) || machineId < 1) {
-      res.status(400).json({ error: 'invalid_machine_id' });
-      return;
-    }
+  app.get('/api/machines/:id/maintenance', async (req, res) => {
+    const machineId = parsePositiveId(req.params.id, 'invalid_machine_id', res);
+    if (machineId === null) return;
 
-    try {
-      const overview = await repository.getMaintenanceOverview(machineId);
-      res.json(overview);
-    } catch (error) {
-      next(error);
-    }
+    const overview = await repository.getMaintenanceOverview(machineId);
+    res.json(overview);
   });
 
-  app.post('/api/maintenance/orders/:id/send', async (req, res, next) => {
-    const orderId = Number(req.params.id);
-    if (!Number.isInteger(orderId) || orderId < 1) {
-      res.status(400).json({ error: 'invalid_maintenance_order_id' });
-      return;
-    }
+  registerOrderAction('send', 'sent', (id) => repository.sendMaintenanceOrder(id));
+  registerOrderAction('cancel', 'cancelled', (id) => repository.cancelMaintenanceOrder(id));
+  registerOrderAction('complete', 'completed', (id) => repository.completeMaintenanceOrder(id));
 
-    try {
-      const order = await repository.sendMaintenanceOrder(orderId);
-      if (!order) {
-        res.status(404).json({ error: 'maintenance_order_not_found' });
-        return;
-      }
-
-      streamHub.broadcast('maintenance', {
-        machineId: order.machine_id,
-        action: 'sent',
-        order,
-      });
-
-      res.json({ order });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post('/api/maintenance/orders/:id/cancel', async (req, res, next) => {
-    const orderId = Number(req.params.id);
-    if (!Number.isInteger(orderId) || orderId < 1) {
-      res.status(400).json({ error: 'invalid_maintenance_order_id' });
-      return;
-    }
-
-    try {
-      const order = await repository.cancelMaintenanceOrder(orderId);
-      if (!order) {
-        res.status(404).json({ error: 'maintenance_order_not_found' });
-        return;
-      }
-
-      streamHub.broadcast('maintenance', {
-        machineId: order.machine_id,
-        action: 'cancelled',
-        order,
-      });
-
-      res.json({ order });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post('/api/maintenance/orders/:id/complete', async (req, res, next) => {
-    const orderId = Number(req.params.id);
-    if (!Number.isInteger(orderId) || orderId < 1) {
-      res.status(400).json({ error: 'invalid_maintenance_order_id' });
-      return;
-    }
-
-    try {
-      const order = await repository.completeMaintenanceOrder(orderId);
-      if (!order) {
-        res.status(404).json({ error: 'maintenance_order_not_found' });
-        return;
-      }
-
-      streamHub.broadcast('maintenance', {
-        machineId: order.machine_id,
-        action: 'completed',
-        order,
-      });
-
-      res.json({ order });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get('/api/integrations/sap/outbox', async (req, res, next) => {
+  app.get('/api/integrations/sap/outbox', async (req, res) => {
     const limit = parseLimit(req.query.limit, { fallback: 20, max: 100 });
     if (limit === null) {
       res.status(400).json({ error: 'invalid_limit' });
       return;
     }
 
-    try {
-      const outbox = await repository.listSapOutbox({ limit });
-      res.json({ limit, outbox });
-    } catch (error) {
-      next(error);
-    }
+    const outbox = await repository.listSapOutbox({ limit });
+    res.json({ limit, outbox });
   });
 
   app.get('/api/system/status', (req, res) => {

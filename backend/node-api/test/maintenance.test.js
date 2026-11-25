@@ -275,6 +275,14 @@ test('gera alerta de vida útil apenas a partir da atenção', () => {
   assert.match(critical.message, /esgotada/);
 });
 
+test('usa warnRatio configurado ao gerar alerta de manutenção', () => {
+  assert.equal(maintenanceAlert(valve, 340, 0.9), null);
+
+  const warning = maintenanceAlert(valve, 340, 0.7);
+  assert.equal(warning.severity, 'warning');
+  assert.match(warning.message, /85%/);
+});
+
 test('alerta de componente de horas usa horas na mensagem', () => {
   const warning = maintenanceAlert(bearing, 170);
 

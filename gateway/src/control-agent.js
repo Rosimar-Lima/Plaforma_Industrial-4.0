@@ -64,7 +64,14 @@ function createControlAgent({
     });
 
   function isBusy() {
-    return Boolean(activeChild && activeChild.exitCode === null && !activeChild.killed);
+    // Um processo encerrado por sinal mantém exitCode === null; sem verificar
+    // signalCode o agente ficaria preso para sempre e bloquearia novos pedidos.
+    return Boolean(
+      activeChild &&
+        activeChild.exitCode === null &&
+        !activeChild.signalCode &&
+        !activeChild.killed
+    );
   }
 
   function discard() {

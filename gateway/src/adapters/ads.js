@@ -12,6 +12,11 @@ function unwrapAdsValue(result) {
   return Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result;
 }
 
+async function cacheMetadata(client) {
+  await client.cacheSymbols?.();
+  await client.cacheDataTypes?.();
+}
+
 function createAdsAdapter({
   targetAmsNetId,
   targetAdsPort,
@@ -41,17 +46,17 @@ function createAdsAdapter({
       console.warn('[ads] conexão perdida; o gateway vai recriar o cliente ADS.');
     });
     novoCliente.on('reconnect', () => {
+      // Se a biblioteca reconectar sozinha, os metadados precisam ser recarregados
+      // antes da próxima leitura por nome de símbolo.
+      void cacheMetadata(novoCliente).catch((error) => {
+        console.warn(`[ads] falha ao recarregar metadados: ${error.message}`);
+      });
       console.log('[ads] reconectado.');
     });
 
     try {
       await novoCliente.connect();
-
-      // O projeto de origem carrega símbolos e tipos após conectar e também após
-      // reconectar. Evita consultar metadados a cada leitura e mantém o
-      // readValue() por nome funcionando se o runtime for reiniciado.
-      await novoCliente.cacheSymbols?.();
-      await novoCliente.cacheDataTypes?.();
+      await cacheMetadata(novoCliente);
     } catch (error) {
       // connect() pode ter registrado a porta local antes de falhar nos
       // metadados. Fechar aqui evita vazamento mesmo se o chamador não fechar.
