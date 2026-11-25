@@ -46,6 +46,13 @@ Docker, use `cd backend/node-api && npm install && npm start` e o simulador com
 
 ## Inicialização e encerramento do dia
 
+O jeito mais simples é usar o atalho **PI40** na área de trabalho (criado a
+partir de `PI40.cmd`). Ele decide sozinho: se o backend não responde, inicia a
+plataforma; se responde, aplica a mesma regra de segurança do botão **Encerrar
+dia** e encerra apenas com a linha `offline`. O UAC aparece só na etapa que
+realmente precisa de elevação. `INICIAR-PI40.cmd` e `ENCERRAR-PI40.cmd`
+continuam disponíveis como caminhos explícitos.
+
 Ao abrir o dashboard, a tela **Preparando a PI40** aparece primeiro e verifica
 API, stream, gateway, CLP, telemetria e banco. Quando todas as verificações
 passam, o painel é aberto automaticamente, sem precisar clicar. Se a comunicação
