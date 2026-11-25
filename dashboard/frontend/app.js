@@ -9,9 +9,10 @@ const TELEMETRY_LIMIT = 120;
 const BOTTLE_VOLUME_ML = 300;
 const MONITORING_EVENT_LIMIT = 10;
 const MONITORING_TRANSITION_MS = 1800;
-const MONITORING_STEP_MS = 70;
 const BOOT_DATE_KEY = 'pi40.boot.date';
 const BOOT_LIMIT_MS = 25000;
+const BOOT_MIN_VISIBLE_MS = 9000;
+const BOOT_STAGE_REVEAL_MS = 1100;
 const SYSTEM_STATUS_POLL_MS = 1000;
 
 const SHUTDOWN_STEPS = [
@@ -44,6 +45,44 @@ const PRIORITY_LABELS = {
   critical: 'Crítica',
 };
 
+const STAGE_STATE_LABELS = {
+  done: 'ok',
+  active: 'em andamento',
+  pending: 'pendente',
+  error: 'falha',
+};
+
+const MONITORING_MODE_CONFIG = {
+  off: {
+    pill: 'Desligado',
+    button: 'Ligar monitoramento',
+    hint: 'Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.',
+  },
+  starting: {
+    pill: 'Iniciando',
+    button: 'Desligar monitoramento',
+    hint: 'A barra avança conforme cada etapa de prontidão é confirmada.',
+  },
+  on: {
+    pill: 'Monitorando',
+    button: 'Desligar monitoramento',
+    hint: 'Plataforma pronta. Os eventos reais continuam sendo registrados abaixo.',
+  },
+  stopping: {
+    pill: 'Desligando',
+    button: 'Aguarde, desligando...',
+    hint: 'Encerrando a sessão de monitoramento com segurança. O histórico permanece no banco.',
+  },
+};
+
+const SHUTDOWN_STATE_PILLS = {
+  done: ['on', 'Concluído'],
+  error: ['off', 'Falha'],
+  running: ['starting', 'Encerrando'],
+};
+
+const NUMBER_FORMATTER = new Intl.NumberFormat('pt-BR');
+
 const MONITORING_STAGES = [
   { id: 'api', label: 'API de ingestão', detail: 'Saúde do backend verificada.' },
   { id: 'stream', label: 'Stream de eventos', detail: 'Canal SSE pronto para receber eventos.' },
@@ -52,6 +91,24 @@ const MONITORING_STAGES = [
   { id: 'telemetry', label: 'Telemetria chegando', detail: 'Aguardando primeira amostra.' },
   { id: 'database', label: 'Persistência no banco', detail: 'Acumulado de produção carregado.' },
 ];
+
+function escapeHtml(value) {
+  const entities = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return String(value ?? '').replace(/[&<>"']/g, (char) => entities[char]);
+}
+
+function setProgress(percentEl, barEl, trackEl, percent) {
+  const safe = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  percentEl.textContent = `${safe}%`;
+  barEl.style.width = `${safe}%`;
+  if (trackEl) trackEl.setAttribute('aria-valuenow', String(safe));
+}
 
 function createStageState() {
   return MONITORING_STAGES.map((stage) => ({
@@ -69,7 +126,6 @@ const state = {
   productionBucket: 'hour',
   samples: [],
   lastSamples: [],
-  alerts: [],
   orders: [],
   maintenanceNames: new Map(),
   selectedOrderId: null,
@@ -79,8 +135,10 @@ const state = {
   monitoring: {
     enabled: false,
     mode: 'off',
+    apiHealthy: null,
     progress: 0,
     targetProgress: 0,
+    animationFrame: null,
     stages: createStageState(),
     events: [],
   },
@@ -89,16 +147,19 @@ const state = {
     allowEnter: false,
     autoEntered: false,
     timer: null,
+    revealTimer: null,
+    revealed: 0,
+    startedAt: 0,
   },
   shutdown: {
     status: null,
     phase: 'checking',
+    verifying: false,
     timer: null,
     lineTimer: null,
     lineState: 'unknown',
     closeScheduled: false,
     startedAt: 0,
-    apiLost: false,
     triggered: false,
   },
 };
@@ -130,7 +191,6 @@ const el = {
   periodSelect: document.getElementById('period-select'),
   refresh: document.getElementById('refresh'),
   diagnosticOpen: document.getElementById('diagnostic-open'),
-  lineConnection: document.getElementById('line-connection'),
   diagnosticModal: document.getElementById('diagnostic-modal'),
   diagnosticClose: document.getElementById('diagnostic-close'),
   diagnosticDismiss: document.getElementById('diagnostic-dismiss'),
@@ -252,11 +312,11 @@ function renderMonitoringEvents() {
         second: '2-digit',
       });
       return `
-        <li class="event ${event.level}">
-          <span class="event-time">${time}</span>
+        <li class="event ${escapeHtml(event.level)}">
+          <span class="event-time">${escapeHtml(time)}</span>
           <div class="event-body">
-            <span class="event-title">${event.title}</span>
-            ${event.detail ? `<span class="event-detail">${event.detail}</span>` : ''}
+            <span class="event-title">${escapeHtml(event.title)}</span>
+            ${event.detail ? `<span class="event-detail">${escapeHtml(event.detail)}</span>` : ''}
           </div>
         </li>
       `;
@@ -267,18 +327,13 @@ function renderMonitoringEvents() {
 function renderStagesInto(target, stages) {
   target.innerHTML = stages
     .map((stage) => {
-      const stateLabel = {
-        done: 'ok',
-        active: 'em andamento',
-        pending: 'pendente',
-        error: 'falha',
-      }[stage.status] || 'pendente';
+      const stateLabel = STAGE_STATE_LABELS[stage.status] || STAGE_STATE_LABELS.pending;
       return `
-        <li class="stage ${stage.status}">
+        <li class="stage ${escapeHtml(stage.status)}">
           <span class="stage-dot" aria-hidden="true"></span>
           <div>
-            <span class="stage-name">${stage.label}</span>
-            <span class="stage-detail">${stage.detail}</span>
+            <span class="stage-name">${escapeHtml(stage.label)}</span>
+            <span class="stage-detail">${escapeHtml(stage.detail)}</span>
           </div>
           <span class="stage-state">${stateLabel}</span>
         </li>
@@ -292,40 +347,14 @@ function renderMonitoringStages() {
 }
 
 function renderMonitoring() {
-  const percent = Math.round(state.monitoring.progress);
-  el.monitoringPercent.textContent = `${percent}%`;
-  el.monitoringBar.style.width = `${percent}%`;
-  el.monitoringTrack.setAttribute('aria-valuenow', String(percent));
+  setProgress(el.monitoringPercent, el.monitoringBar, el.monitoringTrack, state.monitoring.progress);
 
   const status = el.monitoringStatus;
   status.classList.remove('off', 'starting', 'on', 'stopping');
   el.diagnosticModal.classList.remove('off', 'starting', 'on', 'stopping');
   el.monitoringToggle.classList.remove('off', 'starting', 'on', 'stopping');
 
-  const configs = {
-    off: {
-      pill: 'Desligado',
-      button: 'Ligar monitoramento',
-      hint: 'Ao ligar, a PI40 verifica API, gateway, CLP, telemetria e banco antes de declarar prontidão.',
-    },
-    starting: {
-      pill: 'Iniciando',
-      button: 'Desligar monitoramento',
-      hint: 'A barra avança conforme cada etapa de prontidão é confirmada.',
-    },
-    on: {
-      pill: 'Monitorando',
-      button: 'Desligar monitoramento',
-      hint: 'Plataforma pronta. Os eventos reais continuam sendo registrados abaixo.',
-    },
-    stopping: {
-      pill: 'Desligando',
-      button: 'Aguarde, desligando...',
-      hint: 'Encerrando a sessão de monitoramento com segurança. O histórico permanece no banco.',
-    },
-  };
-
-  const current = configs[state.monitoring.mode] || configs.off;
+  const current = MONITORING_MODE_CONFIG[state.monitoring.mode] || MONITORING_MODE_CONFIG.off;
 
   status.textContent = current.pill;
   status.classList.add(state.monitoring.mode);
@@ -386,9 +415,16 @@ function syncMonitoringProgress() {
 function updateMonitoringStages() {
   if (!state.monitoring.enabled) return;
 
-  const apiOk = state.monitoring.mode !== 'off';
-  if (setStage('api', apiOk ? 'done' : 'pending', apiOk ? 'Backend respondeu com sucesso.' : 'Aguardando inicialização.')) {
-    if (apiOk) addMonitoringEvent('API de ingestão verificada', 'O backend respondeu ao /health.', 'ok');
+  const apiHealthy = state.monitoring.apiHealthy;
+  const apiStatus = apiHealthy === true ? 'done' : apiHealthy === false ? 'error' : 'pending';
+  const apiDetail =
+    apiHealthy === true
+      ? 'Backend respondeu com sucesso.'
+      : apiHealthy === false
+        ? 'Não foi possível consultar /health.'
+        : 'Aguardando verificação do /health.';
+  if (setStage('api', apiStatus, apiDetail)) {
+    if (apiHealthy === true) addMonitoringEvent('API de ingestão verificada', 'O backend respondeu ao /health.', 'ok');
   }
 
   const streamStatus = state.streamOnline ? 'done' : 'active';
@@ -462,6 +498,7 @@ async function startMonitoring() {
 
   state.monitoring.enabled = true;
   state.monitoring.mode = 'starting';
+  state.monitoring.apiHealthy = null;
   state.monitoring.progress = 0;
   state.monitoring.targetProgress = 0;
   state.monitoring.stages = createStageState();
@@ -475,8 +512,10 @@ async function startMonitoring() {
 
   try {
     await getJson('/health');
+    state.monitoring.apiHealthy = true;
     setStage('api', 'done', 'Backend respondeu com sucesso.');
   } catch (error) {
+    state.monitoring.apiHealthy = false;
     setStage('api', 'error', 'Não foi possível consultar /health.');
     addMonitoringEvent('Falha ao consultar API', error.message, 'error');
   }
@@ -542,25 +581,69 @@ function markBootDone() {
   }
 }
 
+function visibleBootStages() {
+  // As verificações reais continuam imediatas; apenas a apresentação é
+  // revelada aos poucos para que o usuário acompanhe o processo.
+  return state.monitoring.stages.map((stage, index) =>
+    index < state.boot.revealed
+      ? stage
+      : { ...stage, status: 'pending', detail: 'Aguardando verificação...' }
+  );
+}
+
+function clearBootRevealTimer() {
+  if (state.boot.revealTimer) {
+    clearInterval(state.boot.revealTimer);
+    state.boot.revealTimer = null;
+  }
+}
+
+function startBootReveal() {
+  clearBootRevealTimer();
+  state.boot.revealed = 0;
+  state.boot.startedAt = Date.now();
+  state.boot.revealTimer = setInterval(() => {
+    if (!state.boot.active) {
+      clearBootRevealTimer();
+      return;
+    }
+    if (state.boot.revealed >= state.monitoring.stages.length) {
+      clearBootRevealTimer();
+      return;
+    }
+    state.boot.revealed += 1;
+    renderBoot();
+  }, BOOT_STAGE_REVEAL_MS);
+}
+
 function renderBoot() {
-  const stages = state.monitoring.stages;
-  const percent = monitoringPercent();
+  const stages = visibleBootStages();
+  const realStages = state.monitoring.stages;
+  const doneCount = stages.filter((stage) => stage.status === 'done').length;
+  const percent = Math.round((doneCount / stages.length) * 100);
   const hasError = stages.some((stage) => stage.status === 'error');
-  const ready = percent === 100;
+  const fullyRevealed = state.boot.revealed >= realStages.length;
+  const minElapsed = Date.now() - state.boot.startedAt >= BOOT_MIN_VISIBLE_MS;
+  const ready = percent === 100 && fullyRevealed && minElapsed;
+  const checking = percent === 100 && fullyRevealed && !minElapsed;
   const canEnter = ready || hasError || state.boot.allowEnter;
 
-  el.bootPercent.textContent = `${percent}%`;
-  el.bootBar.style.width = `${percent}%`;
-  el.bootTrack.setAttribute('aria-valuenow', String(percent));
+  setProgress(el.bootPercent, el.bootBar, el.bootTrack, percent);
   renderStagesInto(el.bootStages, stages);
 
   el.bootEnter.disabled = !canEnter;
-  el.bootEnter.textContent = ready ? 'Entrar no painel' : 'Entrar em modo limitado';
+  el.bootEnter.textContent = ready
+    ? 'Entrar no painel'
+    : checking
+      ? 'Finalizando abertura...'
+      : 'Entrar em modo limitado';
   el.bootRetry.hidden = !hasError;
 
   let hint = 'Aguardando as verificações iniciais...';
   if (ready) {
     hint = 'Plataforma pronta. O painel está sendo atualizado em tempo real.';
+  } else if (checking) {
+    hint = 'Verificações concluídas. Finalizando a abertura do painel...';
   } else if (hasError) {
     const gateway = stageById('gateway');
     const plc = stageById('plc');
@@ -590,6 +673,7 @@ function enterDashboard() {
     clearTimeout(state.boot.timer);
     state.boot.timer = null;
   }
+  clearBootRevealTimer();
 
   const ready = monitoringPercent() === 100;
   markBootDone();
@@ -621,6 +705,7 @@ function retryBoot() {
   state.boot.allowEnter = false;
   state.boot.autoEntered = false;
   el.bootRetry.hidden = true;
+  startBootReveal();
   void startMonitoring();
   addMonitoringEvent('Nova tentativa de inicialização', 'Reverificando a prontidão da plataforma.', 'info');
 }
@@ -630,6 +715,7 @@ function enterBoot() {
   state.boot.allowEnter = false;
   state.boot.autoEntered = false;
   el.bootScreen.hidden = false;
+  startBootReveal();
   renderBoot();
 
   state.boot.timer = setTimeout(() => {
@@ -666,37 +752,32 @@ function shutdownStepStatus(value) {
   return 'pending';
 }
 
+function bindModalClose(buttons, onClose, backdrop) {
+  for (const button of buttons) button.addEventListener('click', onClose);
+  if (backdrop) backdrop.addEventListener('click', onClose);
+}
+
 function renderShutdown(status) {
   const byId = new Map((status?.steps || []).map((step) => [step.id, step]));
-  const labels = {
-    done: 'ok',
-    active: 'em andamento',
-    pending: 'pendente',
-    error: 'falha',
-  };
 
   el.shutdownSteps.innerHTML = SHUTDOWN_STEPS.map((step, index) => {
     const data = byId.get(step.id) || {};
     const stepStatus = shutdownStepStatus(data.status);
     const detail = data.detail || (stepStatus === 'pending' ? 'Aguardando' : '');
     return `
-      <li class="stage ${stepStatus}">
+      <li class="stage ${escapeHtml(stepStatus)}">
         <span class="stage-dot" aria-hidden="true"></span>
         <div>
-          <span class="stage-name">${index + 1}. ${data.label || step.label}</span>
-          <span class="stage-detail">${detail}</span>
+          <span class="stage-name">${index + 1}. ${escapeHtml(data.label || step.label)}</span>
+          <span class="stage-detail">${escapeHtml(detail)}</span>
         </div>
-        <span class="stage-state">${labels[stepStatus]}</span>
+        <span class="stage-state">${STAGE_STATE_LABELS[stepStatus]}</span>
       </li>
     `;
   }).join('');
 
   const stateName = status?.state || 'idle';
-  const pill = {
-    done: ['on', 'Concluído'],
-    error: ['off', 'Falha'],
-    running: ['starting', 'Encerrando'],
-  }[stateName] || ['off', 'Confirmando'];
+  const pill = SHUTDOWN_STATE_PILLS[stateName] || ['off', 'Confirmando'];
 
   el.shutdownStatus.classList.remove('on', 'off', 'starting', 'stopping');
   el.shutdownStatus.classList.add(pill[0]);
@@ -714,7 +795,7 @@ function renderShutdown(status) {
   el.shutdownCopy.hidden = !manualFallback;
   const blocked = state.shutdown.phase === 'blocked';
   el.shutdownConfirm.hidden = !blocked;
-  el.shutdownConfirm.disabled = false;
+  el.shutdownConfirm.disabled = state.shutdown.verifying;
   el.shutdownConfirm.textContent = 'Verificar novamente';
   el.shutdownDismiss.textContent = state.shutdown.phase === 'progress' ? 'Fechar' : 'Cancelar';
 
@@ -779,7 +860,6 @@ async function pollSystemStatus() {
     if (Number.isFinite(updatedAt) && updatedAt < state.shutdown.startedAt - 2000) return;
 
     state.shutdown.status = body;
-    state.shutdown.apiLost = false;
     renderShutdown(body);
     if (body.state === 'done' || body.state === 'error') stopSystemStatusPolling();
     return;
@@ -815,7 +895,6 @@ async function pollSystemStatus() {
     }),
   };
   state.shutdown.status = fallback;
-  state.shutdown.apiLost = true;
   renderShutdown(fallback);
   stopSystemStatusPolling();
 }
@@ -873,7 +952,7 @@ function startShutdown() {
   if (state.shutdown.phase === 'progress') return;
 
   state.shutdown.phase = 'checking';
-  state.shutdown.apiLost = false;
+  state.shutdown.verifying = false;
   state.shutdown.triggered = false;
   state.shutdown.closeScheduled = false;
   state.shutdown.lineState = 'unknown';
@@ -888,6 +967,7 @@ function startShutdown() {
 
 function closeShutdownModal() {
   el.shutdownModal.hidden = true;
+  state.shutdown.verifying = false;
   stopLineStatePolling();
   stopSystemStatusPolling();
 }
@@ -914,37 +994,43 @@ async function triggerSystemAction() {
 }
 
 async function verifyAndShutdown() {
-  if (state.shutdown.phase === 'progress') return;
+  if (state.shutdown.phase === 'progress' || state.shutdown.verifying) return;
 
+  state.shutdown.verifying = true;
   state.shutdown.phase = 'checking';
   el.shutdownMessage.textContent = 'Verificando se a linha está desligada...';
   renderShutdown(null);
 
-  let connection = state.lineConnection;
-  if (state.machineId) {
-    try {
-      connection = await getJson(`/api/machines/${state.machineId}/connection`);
-    } catch (error) {
-      connection = null;
+  try {
+    let connection = state.lineConnection;
+    if (state.machineId) {
+      try {
+        connection = await getJson(`/api/machines/${state.machineId}/connection`);
+      } catch (error) {
+        connection = null;
+      }
     }
-  }
-  applyShutdownLineState(connection);
+    applyShutdownLineState(connection);
 
-  if (state.shutdown.lineState === 'offline') {
-    beginShutdownProgress();
-    return;
+    if (state.shutdown.lineState === 'offline') {
+      beginShutdownProgress();
+      return;
+    }
+
+    state.shutdown.phase = 'blocked';
+    el.shutdownMessage.textContent =
+      state.shutdown.lineState === 'online'
+        ? 'A linha ainda responde ao CLP. Desligue-a fisicamente; a verificação será repetida automaticamente.'
+        : 'Não foi possível confirmar a comunicação com o CLP. A verificação será repetida automaticamente.';
+  } finally {
+    state.shutdown.verifying = false;
   }
 
-  state.shutdown.phase = 'blocked';
-  const detail =
-    state.shutdown.lineState === 'online'
-      ? 'A linha ainda responde ao CLP. Desligue-a fisicamente; a verificação será repetida automaticamente.'
-      : 'Não foi possível confirmar a comunicação com o CLP. A verificação será repetida automaticamente.';
-  el.shutdownMessage.textContent = detail;
   renderShutdown(null);
 }
 
 function beginShutdownProgress() {
+  if (state.shutdown.phase === 'progress') return;
   stopLineStatePolling();
   state.shutdown.phase = 'progress';
   state.shutdown.startedAt = Date.now();
@@ -970,46 +1056,11 @@ function beginShutdownProgress() {
 }
 
 function renderLineConnection(connection) {
+  // O estado da linha é mostrado pelo card Operação; a topbar mantém apenas
+  // os controles, sem repetir o mesmo indicador ao lado de "Encerrar dia".
   state.lineConnection = connection ?? null;
   renderOperation();
   updateMonitoringStages();
-
-  const badge = el.lineConnection;
-  badge.classList.remove('line-online', 'line-stopped', 'line-offline', 'line-unknown');
-
-  if (!connection || connection.state === 'unknown') {
-    badge.textContent = 'Linha: —';
-    badge.title = 'Aguardando heartbeat do gateway';
-    badge.classList.add('line-unknown');
-    return;
-  }
-
-  const reportedAt = connection.lastReadAt
-    ? new Date(connection.lastReadAt).toLocaleTimeString('pt-BR')
-    : null;
-
-  if (connection.state === 'offline') {
-    badge.textContent = 'Linha: sem comunicação';
-    badge.title = connection.error
-      ? `Falha: ${connection.error}`
-      : 'Gateway sem heartbeat; CLP pode estar desligado';
-    badge.classList.add('line-offline');
-    return;
-  }
-
-  if (connection.running === true) {
-    badge.textContent = 'Linha: operando';
-    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
-    badge.classList.add('line-online');
-  } else if (connection.running === false) {
-    badge.textContent = 'Linha: parada';
-    badge.title = reportedAt ? `CLP respondeu às ${reportedAt}` : 'CLP respondeu';
-    badge.classList.add('line-stopped');
-  } else {
-    badge.textContent = 'Linha: conectada';
-    badge.title = 'CLP respondeu, mas o estado de operação é desconhecido';
-    badge.classList.add('line-unknown');
-  }
 }
 
 async function refreshLineConnection() {
@@ -1032,8 +1083,13 @@ async function refreshLineConnection() {
   }
 }
 
+function safeRatio(ratio) {
+  const value = Number(ratio);
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
 function formatNumber(value) {
-  return new Intl.NumberFormat('pt-BR').format(Number(value) || 0);
+  return NUMBER_FORMATTER.format(Number(value) || 0);
 }
 
 function formatMaintenanceUsage(value, unit = 'ciclos') {
@@ -1048,7 +1104,7 @@ function formatMaintenanceUsage(value, unit = 'ciclos') {
 function formatPercent(ratio) {
   const value = Number(ratio);
   if (!Number.isFinite(value)) return '—';
-  return `${(Math.max(0, Math.min(1, value)) * 100).toFixed(1)}%`;
+  return `${(safeRatio(value) * 100).toFixed(1)}%`;
 }
 
 function formatDuration(ms) {
@@ -1061,7 +1117,7 @@ function formatDuration(ms) {
 }
 
 function setRatio(valueEl, barEl, ratio) {
-  const safe = Number.isFinite(Number(ratio)) ? Math.max(0, Math.min(1, Number(ratio))) : 0;
+  const safe = safeRatio(ratio);
   valueEl.textContent = formatPercent(safe);
   barEl.style.width = `${(safe * 100).toFixed(1)}%`;
 }
@@ -1097,6 +1153,17 @@ function renderPlaceholders() {
   el.total.textContent = '0';
   el.accumulated.textContent = '0';
   el.lastUpdate.textContent = 'sem dados';
+}
+
+function renderMachinePlaceholder() {
+  renderPlaceholders();
+  renderOee({ nominalCapacityPerHour: 0 });
+  renderAlerts([]);
+  renderMaintenance({ components: [], orders: [] });
+  renderProduction({ buckets: [] });
+  renderProductionTotal(null);
+  renderLineConnection(null);
+  drawChart([]);
 }
 
 function renderTelemetry(samples) {
@@ -1396,7 +1463,6 @@ async function refreshProduction() {
 }
 
 function renderAlerts(alerts) {
-  state.alerts = alerts;
   el.alertsList.innerHTML = '';
 
   const count = alerts.length;
@@ -1748,14 +1814,8 @@ async function loadMachines() {
       state.machineId = null;
       state.machineCode = null;
       state.samples = [];
-      renderPlaceholders();
-      renderOee({ nominalCapacityPerHour: 0 });
-      renderAlerts([]);
-      renderMaintenance({ components: [], orders: [] });
-      renderProduction({ buckets: [] });
-      renderProductionTotal(null);
-      renderLineConnection(null);
-      drawChart([]);
+      state.lastSamples = [];
+      renderMachinePlaceholder();
       return false;
     }
 
@@ -1795,19 +1855,25 @@ el.maintenanceOrdersBody.addEventListener('click', (event) => {
   void completeMaintenanceOrder(button.dataset.id);
 });
 
-el.orderModalClose.addEventListener('click', closeOrderModal);
-el.orderModalDismiss.addEventListener('click', closeOrderModal);
-el.orderModal.querySelector('[data-close-modal]').addEventListener('click', closeOrderModal);
-el.warningClose.addEventListener('click', closeWarningModal);
-el.warningDismiss.addEventListener('click', closeWarningModal);
-el.warningModal.querySelector('[data-close-warning]').addEventListener('click', closeWarningModal);
+bindModalClose(
+  [el.orderModalClose, el.orderModalDismiss],
+  closeOrderModal,
+  el.orderModal.querySelector('[data-close-modal]')
+);
+bindModalClose(
+  [el.warningClose, el.warningDismiss],
+  closeWarningModal,
+  el.warningModal.querySelector('[data-close-warning]')
+);
 el.bootEnter.addEventListener('click', enterDashboard);
 el.bootRetry.addEventListener('click', retryBoot);
 el.bootDiagnostic.addEventListener('click', openDiagnosticModal);
 el.shutdownOpen.addEventListener('click', startShutdown);
-el.shutdownClose.addEventListener('click', closeShutdownModal);
-el.shutdownDismiss.addEventListener('click', closeShutdownModal);
-el.shutdownModal.querySelector('[data-close-shutdown]').addEventListener('click', closeShutdownModal);
+bindModalClose(
+  [el.shutdownClose, el.shutdownDismiss],
+  closeShutdownModal,
+  el.shutdownModal.querySelector('[data-close-shutdown]')
+);
 el.shutdownConfirm.addEventListener('click', () => void verifyAndShutdown());
 el.shutdownCopy.addEventListener('click', copyShutdownCommand);
 el.orderSend.addEventListener('click', () => void changeSelectedOrder('send'));
@@ -1962,6 +2028,7 @@ el.machineSelect.addEventListener('change', () => {
   state.machineCode = selected ? selected.code : null;
   state.samples = [];
   state.lastSamples = [];
+  renderMachinePlaceholder();
   if (state.monitoring.enabled) refreshAll();
 });
 
@@ -1997,9 +2064,11 @@ async function start() {
     else void startMonitoring();
   });
   el.diagnosticOpen.addEventListener('click', openDiagnosticModal);
-  el.diagnosticClose.addEventListener('click', closeDiagnosticModal);
-  el.diagnosticDismiss.addEventListener('click', closeDiagnosticModal);
-  el.diagnosticModal.querySelector('[data-close-diagnostic]').addEventListener('click', closeDiagnosticModal);
+  bindModalClose(
+    [el.diagnosticClose, el.diagnosticDismiss],
+    closeDiagnosticModal,
+    el.diagnosticModal.querySelector('[data-close-diagnostic]')
+  );
 
   setInterval(async () => {
     if (!state.monitoring.enabled) return;

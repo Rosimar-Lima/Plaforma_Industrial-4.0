@@ -47,5 +47,12 @@ o último contador encontrado no histórico, sem apagar nenhuma amostra:
 psql -h localhost -U postgres -d industrial -f migrations/004_production_totals.sql
 ```
 
-A ordem em volumes antigos é 001 → 002 → 003 → 004. Em instalações novas,
+Volumes com OS já enviadas à SAP simulada devem aplicar a migração 005 para
+substituir `SAP-<id>-<sufixo>` pelo número de controle fixo do componente:
+
+```bash
+psql -h localhost -U postgres -d industrial -f migrations/005_sap_control_numbers.sql
+```
+
+A ordem em volumes antigos é 001 → 002 → 003 → 004 → 005. Em instalações novas,
 `schema.sql` já traz tudo e nenhuma migração é necessária.

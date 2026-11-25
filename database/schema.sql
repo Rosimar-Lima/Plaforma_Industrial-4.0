@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS sap_outbox (
     event_type  VARCHAR(60) NOT NULL,
     payload     JSONB NOT NULL,
     status      VARCHAR(20) NOT NULL DEFAULT 'sent',
+    -- Número de controle SAP do componente (7 dígitos, sem prefixo).
     external_id VARCHAR(80),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     sent_at     TIMESTAMPTZ

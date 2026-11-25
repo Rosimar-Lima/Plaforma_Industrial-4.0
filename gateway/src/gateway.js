@@ -1,6 +1,6 @@
 'use strict';
 
-const { buildTelemetry } = require('./mapping');
+const { buildTelemetry, normalizeRunning } = require('./mapping');
 
 function createGateway({
   adapter,
@@ -84,7 +84,7 @@ function createGateway({
       connected = true;
       failures = 0;
       lastError = null;
-      running = typeof values.running === 'boolean' ? values.running : null;
+      running = normalizeRunning(values.running);
       lastReadAt = timestamp;
 
       const payload = buildTelemetry({

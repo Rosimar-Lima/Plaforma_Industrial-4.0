@@ -32,12 +32,18 @@ O projeto foi concebido para funcionar tanto com equipamentos reais quanto com s
 | [gateway/README.md](gateway/README.md) | Gateway industrial (ADS, OPC-UA, Modbus TCP). |
 | [docs/](docs/) | Requisitos, indicadores, casos de uso e glossário. |
 
-## Começando
+## Começando (modo desenvolvimento / MVP)
 
 ```bash
 cp .env.example .env
 docker compose up -d
 ```
+
+> **Atenção:** `docker compose up -d` também inicia o simulador
+> (`AUTO_START=true`, máquina `Linha-01`). Use este modo apenas para
+> desenvolvimento e aceitação. Na operação diária com o gateway ADS real, o
+> simulador deve ficar parado: o caminho é `INICIAR-PI40.cmd` / `pi40-dia.ps1
+> -Action Start`, descrito abaixo.
 
 Dashboard: `http://localhost:3000` (servido pelo backend). A telemetria chega em
 tempo real por SSE (`/api/stream`), com fallback para polling. Para rodar sem
@@ -53,6 +59,14 @@ com o CLP falhar, a tela mostra o que conferir (PLC conectado no TwinCAT XAE e
 runtime em `Run`) e oferece entrar em modo limitado. O atalho
 `INICIAR-PI40.cmd` abre `http://localhost:3000/?boot=1` para forçar a tela de
 abertura; um `F5` no mesmo dia volta direto ao painel.
+
+As verificações continuam sendo feitas assim que os serviços respondem; a
+apresentação é revelada de cerca de 1 em 1 segundo e a tela fica visível por no
+mínimo 9 segundos antes de entrar no painel. Isso dá tempo de acompanhar o
+processo sem atrasar a prontidão real de API, gateway, CLP, telemetria e banco.
+Falhas aparecem na etapa correspondente assim que ela é revelada. O estado da
+linha é exibido no card **Operação**; a topbar não repete esse status ao lado de
+**Encerrar dia**.
 
 Para encerrar, **desligue a linha física primeiro** e clique em **Encerrar dia**
 no topo do painel. O primeiro clique já consulta
@@ -101,7 +115,10 @@ ligado**. Cada componente entra em `warning` ao atingir 80% da vida útil, geran
 uma OS planejada; em 100% fica `critical` e a OS vira `open`. A OS reserva peças
 e é publicada em uma outbox de SAP simulada. O dashboard mostra os componentes
 com a unidade correta, as OS ativas e permite enviar, cancelar ou concluir a
-manutenção (resetando o uso). Endpoints: `GET /api/machines/:id/maintenance`,
+manutenção (resetando o uso). Cada componente tem um número de controle SAP
+fixo de 7 dígitos, sem prefixo — rolamento `1001011`, motor `1001012`, válvula
+de envase `1001013` e válvula de tampagem `1001014` — usado como `external_id`
+da outbox. Endpoints: `GET /api/machines/:id/maintenance`,
 `POST /api/maintenance/orders/:id/send`,
 `POST /api/maintenance/orders/:id/cancel`,
 `POST /api/maintenance/orders/:id/complete` e

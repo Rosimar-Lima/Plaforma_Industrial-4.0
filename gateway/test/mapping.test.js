@@ -7,11 +7,22 @@ const {
   buildTelemetry,
   deriveStep,
   clampFillPercent,
+  normalizeRunning,
   toInteger,
 } = require('../src/mapping');
 const { validateTelemetry } = require('../../backend/node-api/src/validation');
 
 const timestamp = '2026-01-01T00:00:00.000Z';
+
+test('normalizeRunning mantém null para leitura ausente e aceita 0/1 e texto', () => {
+  assert.equal(normalizeRunning(null), null);
+  assert.equal(normalizeRunning(undefined), null);
+  assert.equal(normalizeRunning(''), null);
+  assert.equal(normalizeRunning(0), false);
+  assert.equal(normalizeRunning(1), true);
+  assert.equal(normalizeRunning(' false '), false);
+  assert.equal(normalizeRunning('on'), true);
+});
 
 test('monta telemetria completa e válida', () => {
   const payload = buildTelemetry({

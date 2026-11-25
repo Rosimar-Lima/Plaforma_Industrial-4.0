@@ -55,7 +55,9 @@ Abra `http://localhost:3000` (ou o `PORT` configurado).
 - Alertas: eventos `alert` no SSE; a lista aberta também é reconsultada a cada
   15 s como garantia.
 - Manutenção: eventos `maintenance` no SSE e reconsulta a cada 15 s.
-- O indicador de conexão mostra `Tempo real`, `Polling` ou `Offline`.
+- O estado da linha aparece no card **Operação**: `Linha em operação`,
+  `Operação parada` ou `Linha sem comunicação`. O fallback para polling não tem
+  selo próprio e a topbar não repete esse estado.
 
 O contrato consumido está documentado em
 [`docs/openapi.yaml`](../docs/openapi.yaml).

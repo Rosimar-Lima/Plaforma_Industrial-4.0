@@ -17,11 +17,14 @@ function createFakeClient(valuesBySymbol, { wrap = true } = {}) {
       this.cacheCalls = [];
       this.disconnects = [];
       this.connected = false;
+      this.handlers = {};
       instance = this;
       instances.push(this);
     }
 
-    on() {}
+    on(event, handler) {
+      this.handlers[event] = handler;
+    }
 
     async connect() {
       this.connected = true;
@@ -246,6 +249,25 @@ test('connect() libera a porta local se falhar ao carregar metadados', async () 
   assert.equal(instancia.desconectado, true);
 
   // Uma nova tentativa deve criar um cliente limpo, sem deixar o anterior preso.
+  await adapter.close();
+});
+
+test('reconexão da biblioteca recarrega símbolos e tipos', async () => {
+  const fake = createFakeClient({ 'GVL_HMI.bRunning': true });
+  const adapter = createAdsAdapter({
+    symbols: { running: 'GVL_HMI.bRunning' },
+    clientFactory: fake.Client,
+  });
+
+  await adapter.connect();
+  const client = fake.getInstance();
+  client.cacheCalls.length = 0;
+
+  client.handlers.reconnect();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(client.cacheCalls, ['symbols', 'dataTypes']);
+
   await adapter.close();
 });
 
